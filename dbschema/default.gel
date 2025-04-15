@@ -1,0 +1,14 @@
+module default {
+  type User {
+    required property name -> str;
+    required property email -> str;
+    optional property is_active -> bool;
+    optional property rating -> int16;
+    optional link best_friend -> User;
+    multi link friends -> User;
+  }
+  type Post {
+    required property title -> str;
+    required link author -> User;
+  }
+}
