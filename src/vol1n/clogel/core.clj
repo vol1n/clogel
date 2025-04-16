@@ -14,7 +14,9 @@
             [cheshire.core :as json]
             [clojure.string :as str])
   (:import [com.geldata.driver.exceptions GelErrorException])
-  (:refer-clojure :exclude [update for filter group-by]))
+  (:refer-clojure :exclude
+                  [update for filter group-by min range find max assert count concat mod or not
+                   distinct destructure and <= / > < + >= - *]))
 ; select filter offset group-by limit update insert
               ;delete
 (def select top/select)
@@ -195,6 +197,9 @@
        "[{\"email\":\"colin@example.com\",\"name\":\"Colin\",\"is_active\":true},
                {\"email\":\"dev@example.com\",\"name\":\"Dev\",\"is_active\":false}]"]]
      :union [:cast-str [:access 'u "email"]]}))
+  (clogel->edgeql (and (eq "colin@example.com" "hi") (eq true true)))
+  (clogel->edgeql (-> (top/select :User)
+                      (top/filter (and (eq "colin@example.com" '.email) (eq "Colin" '.name)))))
   (clogel->edgeql
    (top/for
      ['u

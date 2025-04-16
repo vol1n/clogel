@@ -1,7 +1,5 @@
 (ns vol1n.clogel.functions-operators
-  (:require [vol1n.clogel.assignment :refer
-             [generate-assignment-children compile-assignment build-type-form-assignment]]
-            [vol1n.clogel.types :refer
+  (:require [vol1n.clogel.types :refer
              [lub gel-abstract-types is-abstract-type? child-of-abstract-type?]]
             [vol1n.clogel.cardinality :refer [gel-typemod->clogel-cardinalities]]
             [vol1n.clogel.castable :refer [implicit-castable?]]
@@ -259,8 +257,8 @@
                           sym (symbol (str/lower-case (if (namespace kw)
                                                         (str/join "::" [(namespace kw) (name kw)])
                                                         (str (name kw)))))
-                          args-vec ['_ '& 'args]]
-                      (conj acc `(def ~sym (fn ~args-vec (vec (cons ~kw ~(symbol "args")))))))))
+                          args-vec ['& 'args]]
+                      (conj acc `(def ~sym (fn ~args-vec (into [~kw] ~(symbol "args"))))))))
                 []
                 grouped-by-alias)
         sym (symbol registry-name)
