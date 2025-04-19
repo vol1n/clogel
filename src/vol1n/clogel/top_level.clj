@@ -341,7 +341,9 @@
 
 (defn delete ([val] (delete {} val)) ([statement val] (assoc statement :delete val)))
 
-(defn unless-conflict [val] (unless-conflict {} val)) ([statement val] (assoc statement :unless-conflict val)))
+(defn unless-conflict
+  ([val] (unless-conflict {} val))
+  ([statement val] (assoc statement :unless-conflict val)))
 
 (defn for ([binding union] {:for binding :union union}))
 
