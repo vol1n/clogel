@@ -222,15 +222,27 @@
   (clogel->edgeql (top/select {:User [:name] :filter [:= '.name "Alice"]}))
   (query {:delete :User}))
 
+(defn dequote [form] (if (clojure.core/and (seq? form) (= 'quote (first form))) (second form) form))
 
 (defmacro defquery
   [name params query]
-  (if (every? #(str/starts-with? (str (first %)) "$") params)
-    (let [args (vec (keys params))
-          param-binding {}
-          compiled (binding [*clogel-param-bindings* param-binding] (clogel->edgeql query))]
-      `(defn '~name
-         ~args
-         (client/query ~compiled
-                       (into {} (map (fn [p a] [(str (first p)) a]) (map vector params args))))))
-    (throw (ex-info "Every symbol for defquery must start with $ (EdgeQL parameter syntax)" {}))))
+  (let [params (mapv (fn [[name type]] [(dequote name) {:type type :card :singleton}]) params)
+        query (eval query)]
+    (if (every? #(str/starts-with? (str (first %)) "$") params)
+      (let [args (vec (map first params))
+            param-binding (into {} params)
+            compiled (binding [*clogel-param-bindings* param-binding] (clogel->edgeql query))]
+        `(defn ~(dequote name)
+           ~args
+           (client/query ~compiled
+                         ~(into {}
+                                (map (fn [[p a]] [(str (first p)) a]) (map vector params args))))))
+      (throw (ex-info "Every symbol for defquery must start with $ (EdgeQL parameter syntax)"
+                      {})))))
+
+(comment
+  (macroexpand-1 (defquery 'auth-user
+                           [['$email :str] ['$hashed :str]]
+                           (-> (top/select :user/User)
+                               (top/filter (and (eq '$email '.email)
+                                                (eq '$hashed '.passwordHash)))))))
