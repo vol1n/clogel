@@ -30,7 +30,7 @@
 (def delete top/delete)
 (def with top/with)
 (def access func/access)
-
+(def unless-conflict top/unless-conflict)
 
 (defn match-overload
   [call overloads]
