@@ -7,7 +7,7 @@ Clojure-native DSL and compiler for EdgeQL
 ``` clojure
 ;; deps.edn
 {:deps {vol1n/clogel {:git/url "https://github.com/vol1n/clogel.git"
-                      :git/sha "ff373a5a08adc32d3b2833d10a39f3678a354b50"}}}
+                      :git/sha "7b848d3e35ba14b674ca8833952f925c06bd31e8"}}}
 ```
 
 ## ✨ Why?
@@ -27,12 +27,12 @@ select User {
 (require '[vol1n.clogel.core :as g])
 
 (g/query {:select {:User [:name
-                 {:friends [:name]}]}})
+                          {:friends [:name]}]}})
                  
 ;; or
 
 (g/query (g/select (g/User [:name 
-                   {:friends [:name]}])))
+                            {:friends [:name]}])))
                    
 ```
 
@@ -55,12 +55,12 @@ Queries can be built using a somewhat simple EDN form, inspired by [Lacinia](htt
 > Example
 
 ``` clojure
-(g/query (g/select {:User [:name                                          ;; project simple field
+(g/query (g/select {:User [:name                                          ;; simple field
                            {:friends [:name]}                             ;; expand ref field
                            {:= {:my_field (g/select "Hello world!")}}]})) ;; assignment field 
 ```
 
-Optionally, you can use function API that is macro-expanded depending on the schema of your currently active Gel instance. For instance,
+Optionally, you can use a function API that is macro-expanded depending on the schema of your currently active Gel instance. For instance,
 
 ``` clojure
 (g/User [:name])
@@ -73,7 +73,7 @@ Projections are still in EDN.
 Like with object forms, functions and operators can be accessed using raw EDN or macro-expanded functions. Function and operator calls are vectors in the EDN form:
 
 ``` clojure
-[:+_ "a" "b"]
+[:+ "a" "b"]
 ```
 or
 
