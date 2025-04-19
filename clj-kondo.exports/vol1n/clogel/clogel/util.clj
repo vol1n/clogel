@@ -8,7 +8,7 @@
 (def ^:dynamic *clogel-param-bindings* {})
 
 (defrecord Overload [validator compile-fn])
-(defrecord Node [kw generate-children build-type-form overloads generate-kondo-children])
+(defrecord Node [kw generate-children build-type-form overloads])
 
 (defn remove-colon-kw [kw] (str/join (rest (str kw))))
 

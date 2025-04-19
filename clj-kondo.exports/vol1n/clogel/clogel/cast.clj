@@ -21,7 +21,6 @@
   (->Overload (build-cast-validator cast) (build-cast-compiler cast)))
 
 (def cast-children-generator (fn [[_ from]] [from]))
-(def cast-kondo-children-generator (fn [kondo-node _] (last (:children kondo-node))))
 
 (def cast-type-form (fn [cast types] [(first cast) (first types)]))
 
@@ -36,7 +35,6 @@
           (map (fn [[to-type casts]] [(keyword (str "cast-" (remove-colon-kw to-type)))
                                       (->Node (keyword (str "cast-" (remove-colon-kw to-type)))
                                               cast-children-generator
-                                              cast-kondo-children-generator
                                               cast-type-form
                                               (vec (map build-cast-overload-form casts)))])
                grouped))))

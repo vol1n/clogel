@@ -4,8 +4,7 @@
              [gel-type->clogel-type ->Node ->Overload remove-colon-kw max-card
               *clogel-dot-access-context* *clogel-with-bindings*]]
             [vol1n.clogel.castable :refer [implicit-castable? validate-object-type-cast]]
-            [vol1n.clogel.object-util :refer [object-registry raw-objects]]
-            [clj-kondo.hooks-api :as api]))
+            [vol1n.clogel.object-util :refer [object-registry raw-objects]]))
 
 
 (def mod-keys #{:limit :order-by :filter :offset})
@@ -220,50 +219,14 @@
   (reduce (fn [acc item]
             (cond (keyword? item) acc
                   (and (map? item) (= (key (first item)) :=)) (conj acc (val (first (get item :=))))
-                  :else
-                  (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %)) item)
-                        modifiers (dissoc item main-key)
-                        main-children (get-projection-children (get item main-key))]
-                    (concat acc (concat main-children (map #(get item %) (sort-keys modifiers)))))))
+                  :else (concat acc (get-projection-children item))))
           []
           proj))
 
 (def generate-object-children
   (fn [object]
     (cond (keyword? object) nil
-          (map? object) (get-projection-children (val (first object))))))
-
-(defn get-kondo-projection-children
-  [vector-node]
-  (reduce (fn [acc node]
-            (cond (api/keyword-node? node) acc
-                  (api/map-node? node)
-                  (let [sexpr (api/sexpr node)]
-                    (if (= (key (first sexpr)) :=) ;; {:= {:kw val}}
-                      (conj acc
-                            (some-> node
-                                    :children second
-                                    :children second))
-                      (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %)) sexpr)
-                            modifiers (dissoc sexpr main-key)
-                            sorted-modifiers (sort-keys modifiers)
-                            pairs (partition 2 node)]
-                        (concat acc
-                                (concat (get-kondo-projection-children
-                                         (some (fn [[kw node]] (when (= kw main-key) node)) pairs))
-                                        (map (fn [mod]
-                                               (some (fn [[kw node]] (when (= kw mod) node)) pairs))
-                                             sorted-modifiers))))))))
-          []
-          vector-node))
-
-
-(def kondo-generate-object-children
-  (fn [kondo-node _]
-    (let [sexpr (api/sexpr kondo-node)]
-      (cond (api/keyword-node? kondo-node) nil
-            (api/map-node? kondo-node) (get-kondo-projection-children (last (:children
-                                                                             kondo-node)))))))
+          (map? object) (get-projection-children object))))
 
 (defn resolve-path
   [path type]
@@ -316,7 +279,6 @@
 (def dot-access
   {:dot-access (->Node :dot-access
                        (fn [_] nil)
-                       (fn [_ _] nil)
                        (fn [call _] call)
                        [(->Overload validate-dot-access compile-dot-access)])})
 
@@ -331,7 +293,6 @@
           (map (fn [obj-type] [(:clogel-name obj-type)
                                (->Node (:clogel-name obj-type)
                                        generate-object-children
-                                       kondo-generate-object-children
                                        build-type-form
                                        [(->Overload (build-object-validator obj-type)
                                                     (build-object-compiler obj-type))])])

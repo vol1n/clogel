@@ -46,7 +46,6 @@
   (->Node
    :scalar
    (fn [_] nil)
-   (fn [_] [])
    (fn [scalar & _] scalar)
    [(->Overload #(if (string? %)
                    {:type :str :card :singleton}

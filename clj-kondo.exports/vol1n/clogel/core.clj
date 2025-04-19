@@ -35,15 +35,12 @@
 
 (defn match-overload
   [call overloads]
-  (if (= (clojure.core/count overloads) 1)
-    (let [result ((:validator (first overloads)) call)]
-      (if (:error/error result) result {:overload (first overloads) :annotations result}))
-    (let [matched (some (fn [ovl]
-                          (let [result ((:validator ovl) call)]
-                            (when (clojure.core/not (:error/error result))
-                              {:overload ovl :annotations result})))
-                        overloads)]
-      matched)))
+  (let [matched (some (fn [ovl]
+                        (let [result ((:validator ovl) call)]
+                          (when (clojure.core/not (:error/error result))
+                            {:overload ovl :annotations result})))
+                      overloads)]
+    matched))
 
 (defgelfuncs)
 (defgelcasts)
@@ -72,8 +69,7 @@
              :value
              (str \< (:type (get *clogel-param-bindings* edn)) \> edn))
       (let [node-key (cond (clojure.core/and (map? edn) (:with edn)) :with
-                           (map? edn) (some #(when (clojure.core/not (contains? mod-keys %)) %)
-                                            (keys edn))
+                           (map? edn) (some #(when (not (contains? mod-keys %)) %) (keys edn))
                            (clojure.core/and (vector? edn) (keyword? (first edn))) (first edn)
                            (keyword? edn) edn
                            (symbol? edn) :dot-access
@@ -114,13 +110,12 @@
                                           {:compiled [] :with-bindings *clogel-with-bindings*}
                                           (map vector
                                                (map first (:using edn))
-                                               (clojure.core/take (clojure.core/count (:using edn))
+                                               (clojure.core/take (count (:using edn))
                                                                   (rest children))))]
                               (binding [*clogel-with-bindings* bindings]
                                 (conj (cons compiled-group-statement compiled-with-children)
                                       (map clogel->edgeql
-                                           (clojure.core/drop (inc (clojure.core/count (:using
-                                                                                        edn)))
+                                           (clojure.core/drop (inc (count (:using edn)))
                                                               children)))))
                             (clojure.core/= node-key :with)
                             (let [{compiled-with-children :compiled bindings :with-bindings}
@@ -142,20 +137,15 @@
                                       (reduce #(conj %1 (clogel->edgeql %2)) [] (rest children))))))
                       (map clogel->edgeql children))))
                 type-form ((:build-type-form node) edn (map #(dissoc % :value) compiled-children))
-                {annotations :annotations
-                 overload    :overload
-                 is-error    :error/error
-                 message     :error/message}
-                (match-overload type-form (:overloads node))]
-            (if is-error
-              (throw (ex-info "Invalid form" {:error/message message}))
-              (if (clojure.core/not overload)
-                (throw (ex-info (str "No overload for node of type " node-key " for value " edn)
-                                {:node edn :valid (:overloads node)}))
-                (assoc annotations
-                       :value
-                       (apply (:compile-fn overload)
-                              (into [edn] (map :value compiled-children))))))))))))
+                {annotations :annotations overload :overload} (match-overload type-form
+                                                                              (:overloads node))]
+            (if (clojure.core/not overload)
+              (throw (ex-info (str "No overload for node of type " node-key " for value " edn)
+                              {:node edn :valid (:overloads node)}))
+              (assoc annotations
+                     :value
+                     (apply (:compile-fn overload)
+                            (into [edn] (map :value compiled-children)))))))))))
 
 (defn query
   [q]
@@ -208,10 +198,9 @@
        "[{\"email\":\"colin@example.com\",\"name\":\"Colin\",\"is_active\":true},
                {\"email\":\"dev@example.com\",\"name\":\"Dev\",\"is_active\":false}]"]]
      :union [:cast-str [:access 'u "email"]]}))
-  (clogel->edgeql (clojure.core/and (eq "colin@example.com" "hi") (eq true true)))
+  (clogel->edgeql (and (eq "colin@example.com" "hi") (eq true true)))
   (clogel->edgeql (-> (top/select :User)
-                      (top/filter (clojure.core/and (eq "colin@example.com" '.email)
-                                                    (eq "Colin" '.name)))))
+                      (top/filter (and (eq "colin@example.com" '.email) (eq "Colin" '.name)))))
   (clogel->edgeql
    (top/for
      ['u
@@ -249,3 +238,5 @@
          (client/query ~compiled
                        (into {} (map (fn [p a] [(str (first p)) a]) (map vector params args))))))
     (throw (ex-info "Every symbol for defquery must start with $ (EdgeQL parameter syntax)" {}))))
+
+(comment)

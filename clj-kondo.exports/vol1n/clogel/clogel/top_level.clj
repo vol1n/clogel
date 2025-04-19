@@ -1,7 +1,6 @@
 (ns vol1n.clogel.top-level
   (:require [vol1n.clogel.castable :refer [implicit-castable?]]
-            [vol1n.clogel.util :refer [->Node ->Overload remove-colon-kw]]
-            [clj-kondo.hooks-api :as api])
+            [vol1n.clogel.util :refer [->Node ->Overload remove-colon-kw]])
   (:refer-clojure :exclude [update for filter]))
 
 (defn validate-map
@@ -181,24 +180,6 @@ Make sure there are only assignments."}}
                            (name k)]))          ;; secondary: alphabetical
          vec)))
 
-(defn sort-calls
-  [& calls]
-  (let [priority {"select"          1
-                  "group"           2
-                  "using"           2.25
-                  "by"              2.3
-                  "insert"          4
-                  "update"          5
-                  "unless-conflict" 4.5
-                  "else"            4.75
-                  "order-by"        6}]
-    (sort-by (fn [call]
-               (let [sym (-> call
-                             first
-                             name)]
-                 [(get priority sym 999) sym]))
-             calls)))
-
 (defn compile-modifier [k child] (str (remove-colon-kw k) " " child))
 
 (defn compile-order-by
@@ -279,162 +260,76 @@ Make sure there are only assignments."}}
                  ""
                  (map vector (sort-keys group-by-statement) (rest remaining))))))
 
-(defn kondo-map-node-in-order
-  [map-node key-order]
-  (let [pairs (partition 2 (:children map-node))]
-    (map #(some (fn [[kw node]] (when (= kw %) node)) pairs) key-order)))
-
-(defn is-top-level-call?
-  [node test-sym]
-  (println "node" node)
-  (let [resolved (-> node
-                     :children
-                     first
-                     meta
-                     :resolved-symbol)
-        sym (first (api/sexpr node))]
-    (println "resolved" resolved)
-    (println "sym" sym)
-    (or (= resolved (symbol (str "clogel.top-level/" sym)))
-        (and (symbol? sym) (= (name sym) test-sym)))))
-
-(comment
-  (is-top-level-call? (api/parse-string "(select :User)") 'select))
-
-(comment
-  (-> (select User)
-      (filter [...])
-      (limit 10)))
-
-(defn get-tfm-children-in-order
-  [kondo-node]
-  (map last (:children (sort-calls (rest (:children kondo-node))))))
-
-(defn top-level-kondo-children
-  [kondo-node _]
-  (if (api/map-node? kondo-node)
-    (let [pairs (partition 2 (:children kondo-node))]
-      (kondo-map-node-in-order kondo-node (sort-keys (map first pairs))))
-    (if (= (api/sexpr (first (:children kondo-node))) '->)
-      (get-tfm-children-in-order kondo-node)
-      [(last (:children kondo-node))])))
 
 (def clogel-top-level-statements
-  {:select (->Node
-            :select
-            (fn [select-statement]
-              (map (fn [k] (get select-statement k)) (sort-keys select-statement)))
-            top-level-kondo-children
-            (fn [select-statement types]
-              (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys select-statement) types))))
-            [(->Overload select-validator (build-top-level-compiler :select))])
-   :insert (->Node
-            :insert
-            (fn [insert-statement]
-              (map (fn [k] (get insert-statement k)) (sort-keys insert-statement)))
-            top-level-kondo-children
-            (fn [insert-statement types]
-              (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys insert-statement) types))))
-            [(->Overload insert-validator (build-top-level-compiler :insert))])
-   :update (->Node
-            :update
-            (fn [update-statement]
-              (map (fn [k] (get update-statement k)) (sort-keys update-statement)))
-            top-level-kondo-children
-            (fn [update-statement types]
-              (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys update-statement) types))))
-            [(->Overload update-validator (build-top-level-compiler :update))])
-   :delete (->Node
-            :delete
-            (fn [delete-statement]
-              (map (fn [k] (get delete-statement k)) (sort-keys delete-statement)))
-            top-level-kondo-children
-            (fn [delete-statement types]
-              (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys delete-statement) types))))
-            [(->Overload delete-validator (build-top-level-compiler :delete))])
-   :with
-   (->Node
-    :with
-    (fn [with-statement]
-      (into (mapv #(last %) (:with with-statement)) [(dissoc with-statement :with)]))
-    (fn [kondo-node _]
-      (if (api/map-node? kondo-node)
-        (let [pairs (partition 2 (:children kondo-node))
-              {[with] true rest false} (clojure.core/group-by (fn [[kw _]] (= kw :with)) pairs)]
-          (conj (map last with) (api/map-node (mapcat identity rest))))
-        (if (= (api/sexpr (first (:children kondo-node))) '->)
-          (let [threaded (rest :children kondo-node)
-                with (some #(when (is-top-level-call? % 'with) %) threaded)
-                rest (keep #(when-not (is-top-level-call? % 'with) %) threaded)]
-            (conj (map last (last with)) (api/list-node (into (list* (api/token-node '->)) rest))))
-          (if (= (count (:children kondo-node)) 2)
-            (throw (ex-info "Invalid with" {}))
-            (rest (:children kondo-node))))))
-    (fn [with-statement types]
-      (merge {:with (mapv vector (map first (:with with-statement)) types) :rest (last types)}))
-    [(->Overload with-validator compile-with)])
-   :group-by
-   (->Node
-    :group-by
-    (fn [group-by-statement]
-      (into [(:group group-by-statement)]
-            (concat (mapv last (:using group-by-statement))
-                    [(:by group-by-statement)]
-                    (mapv (fn [k] (get group-by-statement k))
-                          (clojure.core/filter (fn [k] (not (contains? #{:group :using :by} k)))
-                                               (sort-keys group-by-statement))))))
-    (fn [kondo-node _]
-      (if (api/map-node? kondo-node)
-        (let [sexpr (api/sexpr kondo-node)]
-          (if (contains? sexpr :using)
-            (let [[group-node using-node by-node & rest]
-                  (kondo-map-node-in-order kondo-node (sort-keys sexpr))]
-              (concat [group-node (mapv last (:children using-node) by-node)] rest))
-            (let [[group-node by-node & rest] (kondo-map-node-in-order kondo-node
-                                                                       (sort-keys sexpr))]
-              (concat [group-node (mapv last by-node)] rest))))
-        (if (= (api/sexpr (first (:children kondo-node))) '->)
-          (let [threaded (rest (:children kondo-node))
-                group-by (some #(when (is-top-level-call? % 'group-by) %) threaded)
-                using (some #(when (is-top-level-call? % 'using) %) threaded)
-                rest (keep #(when-not (or (is-top-level-call? % 'group-by)
-                                          (is-top-level-call? % 'using))
-                              %)
-                           threaded)
-                group (second (:children group-by))
-                by (last (:children group-by))]
-            (if using
-              [group (last using) by (map last (sort-by first rest))]
-              [group by (map last (sort-by first rest))]))
-          (if (= (count (:children kondo-node)) 4)
-            [(nth (:children kondo-node) 2) (last (:children kondo-node))]
-            [(second (:children kondo-node)) (last (:children kondo-node))]))))
-    (fn [group-by-statement types]
-      (:type-form
-       (reduce
-        (fn [acc [k _]]
-          {:type-form (assoc acc k (first (:remaining acc))) :remaining (rest (:remaining acc))})
-        {:type-form (if (contains? group-by-statement :using)
-                      {:group (first types)
-                       :using (mapv vector (map first (:using group-by-statement)) (rest types))
-                       :by    (first (drop (inc (count (:using group-by-statement))) types))}
-                      {:group (first types) :by (second types)})
-         :remaining (drop (+ (count (:using group-by-statement)) 2))}
-        (dissoc group-by-statement :group :using :by))))
-    [(->Overload group-by-validator compile-group-by)])
-   :for (->Node :for
-                (fn [for-statement] [(second (:for for-statement)) (:union for-statement)])
-                (fn [kondo-node _]
-                  (if (api/map-node? kondo-node)
-                    (let [[binding-node union-node] (kondo-map-node-in-order kondo-node
-                                                                             [:for :union])]
-                      [(-> binding-node
-                           :children
-                           second) union-node])
-                    [(-> (second kondo-node :children second)) (nth kondo-node 2)]))
-                (fn [for-statement types]
-                  {:for [(first (:for for-statement)) (first types)] :union (last types)})
-                [(->Overload for-validator compile-for)])})
+  {:select   (->Node
+              :select
+              (fn [select-statement]
+                (map (fn [k] (get select-statement k)) (sort-keys select-statement)))
+              (fn [select-statement types]
+                (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys select-statement) types))))
+              [(->Overload select-validator (build-top-level-compiler :select))])
+   :insert   (->Node
+              :insert
+              (fn [insert-statement]
+                (map (fn [k] (get insert-statement k)) (sort-keys insert-statement)))
+              (fn [insert-statement types]
+                (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys insert-statement) types))))
+              [(->Overload insert-validator (build-top-level-compiler :insert))])
+   :update   (->Node
+              :update
+              (fn [update-statement]
+                (map (fn [k] (get update-statement k)) (sort-keys update-statement)))
+              (fn [update-statement types]
+                (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys update-statement) types))))
+              [(->Overload update-validator (build-top-level-compiler :update))])
+   :delete   (->Node
+              :delete
+              (fn [delete-statement]
+                (map (fn [k] (get delete-statement k)) (sort-keys delete-statement)))
+              (fn [delete-statement types]
+                (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys delete-statement) types))))
+              [(->Overload delete-validator (build-top-level-compiler :delete))])
+   :with     (->Node :with
+                     (fn [with-statement]
+                       (into (mapv #(last %) (:with with-statement))
+                             [(dissoc with-statement :with)]))
+                     (fn [with-statement types]
+                       (merge {:with (mapv vector (map first (:with with-statement)) types)
+                               :rest (last types)}))
+                     [(->Overload with-validator compile-with)])
+   :group-by (->Node :group-by
+                     (fn [group-by-statement]
+                       (into [(:group group-by-statement)]
+                             (concat (mapv last (:using group-by-statement))
+                                     [(:by group-by-statement)]
+                                     (mapv (fn [k] (get group-by-statement k))
+                                           (clojure.core/filter
+                                            (fn [k] (not (contains? #{:group :using :by} k)))
+                                            (sort-keys group-by-statement))))))
+                     (fn [group-by-statement types]
+                       (:type-form
+                        (reduce (fn [acc [k _]]
+                                  {:type-form (assoc acc k (first (:remaining acc)))
+                                   :remaining (rest (:remaining acc))})
+                                {:type-form (if (contains? group-by-statement :using)
+                                              {:group (first types)
+                                               :using (mapv vector
+                                                            (map first (:using group-by-statement))
+                                                            (rest types))
+                                               :by    (first (drop (inc (count
+                                                                         (:using
+                                                                          group-by-statement)))
+                                                                   types))}
+                                              {:group (first types) :by (second types)})
+                                 :remaining (drop (+ (count (:using group-by-statement)) 2))}
+                                (dissoc group-by-statement :group :using :by))))
+                     [(->Overload group-by-validator compile-group-by)])
+   :for      (->Node :for
+                     (fn [for-statement] [(second (:for for-statement)) (:union for-statement)])
+                     (fn [for-statement types]
+                       {:for [(first (:for for-statement)) (first types)] :union (last types)})
+                     [(->Overload for-validator compile-for)])})
 
 (defn select ([val] (select {} val)) ([statement val] (assoc statement :select val)))
 
@@ -448,8 +343,6 @@ Make sure there are only assignments."}}
    (-> statement
        (assoc :group group)
        (assoc :by by))))
-
-(defn using ([statement using] (assoc statement :using using)))
 
 (defn limit ([amount] (limit {} amount)) ([statement amount] (assoc statement :limit amount)))
 

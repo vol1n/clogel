@@ -5,8 +5,7 @@
             [vol1n.clogel.castable :refer [implicit-castable?]]
             [clojure.string :as str]
             [vol1n.clogel.util :refer [gel-type->clogel-type ->Overload ->Node max-card]]
-            [vol1n.clogel.client :refer [query]]
-            [clj-kondo.hooks-api :as api]))
+            [vol1n.clogel.client :refer [query]]))
 
 
 (defn edgename->keyword
@@ -190,20 +189,6 @@
   (fn [[_ & args]]
     (map #(if (and (map? %) (= (key (first %)) :=)) (val (first (get % :=))) %) args)))
 
-{:= {:something 'something}}
-'something
-
-(def fn-kondo-children-generator
-  (fn [kondo-node _]
-    (let [[_ & arg-nodes] (:children kondo-node)]
-      (map #(let [sexpr (api/sexpr %)]
-              (if (and (map? sexpr) (= (key (first sexpr)) :=))
-                (some-> %
-                        :children second
-                        :children second)
-                %))
-           arg-nodes))))
-
 (def build-type-form
   (fn [call types]
     (into [(first call)]
@@ -237,7 +222,6 @@
                   (map (fn [[fname overloads]] [(edgename->keyword fname)
                                                 (->Node (edgename->keyword fname)
                                                         fn-children-generator
-                                                        fn-kondo-children-generator
                                                         build-type-form
                                                         (vec (pmap build-fn-overload-form
                                                                    overloads)))])
@@ -248,7 +232,6 @@
                                    alias
                                    (->Node alias
                                            fn-children-generator
-                                           fn-kondo-children-generator
                                            build-type-form
                                            (vec (pmap build-fn-overload-form overloads))))
                             acc))
@@ -321,7 +304,7 @@ select schema::Function {
     return_type: { name },
 }"))
 
-(defonce fns (get-fns))
+(defonce fns (delay (get-fns)))
 
 (defmacro defgelfuncs [] (function-helper fns))
 
@@ -383,7 +366,7 @@ select schema::Operator {
     (str (first compiled-children) \[ (second compiled-children) \: (nth compiled-children 2) \])
     (str (first compiled-children) \[ (second compiled-children) \])))
 
-(defonce ops (get-ops))
+(defonce ops (delay (get-ops)))
 
 (defmacro defgeloperators [] (function-helper ops))
 
@@ -415,11 +398,9 @@ filter .name = 'std::[]';
 
 (comment
   (get-slices))
-
 (def gel-index
   {:access (->Node :access
                    (fn [[_ & args]] (println "args" args) (into [] args))
-                   (fn [kondo-node _] (into [] (rest (:children kondo-node))))
                    (fn [_ types] (into [:index] types))
                    (mapv #(->Overload (build-index-slice-validator %) index-slice-compiler)
                          (get-slices)))})
