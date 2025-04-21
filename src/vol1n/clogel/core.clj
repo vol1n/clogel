@@ -7,7 +7,8 @@
             [vol1n.clogel.functions-operators :as func]
             [vol1n.clogel.object-types :refer [defgelobjects dot-access]]
             [vol1n.clogel.util :refer
-             [*clogel-dot-access-context* *clogel-with-bindings* *clogel-param-bindings*]]
+             [*clogel-dot-access-context* *clogel-with-bindings* *clogel-param-bindings*
+              remove-colon-kw]]
             [vol1n.clogel.top-level :refer [clogel-top-level-statements]]
             [vol1n.clogel.top-level :as top]
             [vol1n.clogel.client :as client]
@@ -66,7 +67,7 @@
     (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))
       (assoc (clojure.core/get *clogel-param-bindings* edn)
              :value
-             (str \< (:type (get *clogel-param-bindings* edn)) \> edn))
+             (str \< (remove-colon-kw (:type (get *clogel-param-bindings* edn))) \> edn))
       (let [node-key (cond (clojure.core/and (map? edn) (:with edn)) :with
                            (map? edn) (some #(when (not (contains? mod-keys %)) %) (keys edn))
                            (clojure.core/and (vector? edn) (keyword? (first edn))) (first edn)
@@ -220,6 +221,9 @@
   (clogel->edgeql {:select {:User [{:= {:doubled [:* '.rating 2]}}]}})
   (clogel->edgeql (top/for ['u :User] {:select 'u.email}))
   (clogel->edgeql (top/select {:User [:name] :filter [:= '.name "Alice"]}))
+  (clogel->edgeql (-> (top/insert {:user/User [{:= {:email "colin@example.com"}}
+                                               {:= {:passwordHash "hashed"}}]})
+                      (top/unless-conflict '.email)))
   (query {:delete :User}))
 
 (defn dequote [form] (if (clojure.core/and (seq? form) (= 'quote (first form))) (second form) form))
@@ -231,18 +235,30 @@
     (if (every? #(str/starts-with? (str (first %)) "$") params)
       (let [args (vec (map first params))
             param-binding (into {} params)
-            compiled (binding [*clogel-param-bindings* param-binding] (clogel->edgeql query))]
+            compiled (binding [*clogel-param-bindings* param-binding] (compile-query query))]
         `(defn ~(dequote name)
            ~args
-           (client/query ~compiled
-                         ~(into {}
-                                (map (fn [[p a]] [(str (first p)) a]) (map vector params args))))))
+           (try (client/query
+                 ~compiled
+                 ~(into {} (map (fn [[p a]] [(str (first p)) a]) (map vector params args))))
+                (catch Throwable e#
+                  (throw (ex-info "Exception in Gel query execution: "
+                                  {:message (.getMessage e#)
+                                   :cause   (.getCause e#)
+                                   :stack   (map #(str "  at" %) (.getStackTrace e#))}))))))
       (throw (ex-info "Every symbol for defquery must start with $ (EdgeQL parameter syntax)"
                       {})))))
 
+(defquery 'auth-user
+          [['$email :str] ['$hashed :str]]
+          (-> (top/select 42)
+              (top/filter (and (eq '$email "email") (eq '$hashed "email")))))
+
+(defquery 'test-query
+          [['$test :int64]]
+          (-> (top/select '$test)))
+
 (comment
-  (macroexpand-1 (defquery 'auth-user
-                           [['$email :str] ['$hashed :str]]
-                           (-> (top/select :user/User)
-                               (top/filter (and (eq '$email '.email)
-                                                (eq '$hashed '.passwordHash)))))))
+  (query "select 42")
+  (auth-user "test@example.com" "hashed-password")
+  (test-query 64))
