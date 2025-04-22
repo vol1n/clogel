@@ -104,35 +104,36 @@ select schema::Cast {
           "not an object type so not castable to object-type.
 Did you try and use a scalar as an object?"
           object-type)})
-      :else (let [required-fields (keep (fn [[k v]]
-                                          (when (and (:required v) (not (#{:id :__type__} k))) k))
-                                        object-type-map)
-                  fields (reduce (fn [acc [k v]]
-                                   (let [type-def (get object-type-map k)]
-                                     (if type-def
-                                       (if (and (implicit-castable? (:type v)
-                                                                    (:type (get cast-type k)))
-                                                (card-gte? (:card v) (:card type-def)))
-                                         (conj acc k)
-                                         (reduced {:error/error true
-                                                   :error/message
-                                                   (str "Key with cardinality "
-                                                        (:card v)
-                                                        " and type "
-                                                        (:type v)
-                                                        "does not cast onto object field with "
-                                                        "type "
-                                                        (:type type-def)
-                                                        {:card (:card type-def)
-                                                         :type (:type type-def)})}))
-                                       (conj acc k))))
-                                 []
-                                 cast-type)]
-              (if (:error/error fields)
-                fields
-                (if (not (set/superset? (set fields) (set required-fields)))
-                  {:error/error   true
-                   :error/message (str "Not every required field is there for " object-type
-                                       " Required: " required-fields
-                                       " Received " fields)}
-                  true))))))
+      :else
+      (let [required-fields
+            (keep (fn [[k v]]
+                    (when (and (not (:default v)) (:required v) (not (#{:id :__type__} k))) k))
+                  object-type-map)
+            fields (reduce (fn [acc [k v]]
+                             (let [type-def (get object-type-map k)]
+                               (if type-def
+                                 (if (and (implicit-castable? (:type v) (:type (get cast-type k)))
+                                          (card-gte? (:card v) (:card type-def)))
+                                   (conj acc k)
+                                   (reduced {:error/error   true
+                                             :error/message (str
+                                                             "Key with cardinality "
+                                                             (:card v)
+                                                             " and type "
+                                                             (:type v)
+                                                             "does not cast onto object field with "
+                                                             "type "
+                                                             (:type type-def)
+                                                             {:card (:card type-def)
+                                                              :type (:type type-def)})}))
+                                 (conj acc k))))
+                           []
+                           cast-type)]
+        (if (:error/error fields)
+          fields
+          (if (not (set/superset? (set fields) (set required-fields)))
+            {:error/error   true
+             :error/message (str "Not every required field is there for " object-type
+                                 " Required: " (vec required-fields)
+                                 " Received " fields)}
+            true))))))

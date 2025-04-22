@@ -113,6 +113,10 @@
                                 {}))))
                     {}
                     vec)]
+               (println "only=" only=)
+               (println (:clogel-name object-type))
+               (println "redu" reduced)
+               (println (validate-object-type-cast (:clogel-name object-type) reduced))
                (assoc (cond-> reduced
                         only-existing-assignments (assoc :settable true)
                         (and only=
@@ -246,12 +250,20 @@
           []
           proj))
 
-(defn get-free-object-children [obj] (get-projection-children {:free-object obj}))
+(defn get-free-object-children
+  [obj]
+  (let [children (get-projection-children {:free-object obj})]
+    (println "obj" obj)
+    (println "gfoc" children)
+    children))
 
 (def generate-object-children
   (fn [object]
-    (cond (keyword? object) nil
-          (map? object) (get-projection-children object))))
+    (let [children (cond (keyword? object) nil
+                         (map? object) (get-projection-children object))]
+      (println "object" object)
+      (println "goc" children)
+      children)))
 
 (defn resolve-path
   [path type]

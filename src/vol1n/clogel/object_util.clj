@@ -21,7 +21,8 @@
                                             {:card     (card-str->clogel-card (:cardinality prop))
                                              :type     (gel-type->clogel-type
                                                         (get-in prop [:target :name]))
-                                             :required (:required prop)}))
+                                             :required (:required prop)
+                                             :default  (:default prop)}))
                                    {}
                                    properties))]
                      (merge (parse-properties (:links obj)) (parse-properties (:properties obj))))))
@@ -47,6 +48,7 @@ select schema::ObjectType {
         name,
         cardinality,
         required,
+        default,
         target: { name },
     },
     constraints: { name },

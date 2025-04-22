@@ -65,6 +65,8 @@
 
 (defn clogel->edgeql
   [edn]
+  (println "edn" edn)
+  (println "with-bindings" *clogel-with-bindings*)
   (if (clojure.core/and (symbol? edn) (contains? *clogel-with-bindings* edn))
     (assoc (get *clogel-with-bindings* edn) :value (str edn))
     (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))
@@ -243,49 +245,19 @@
 
 (defn dequote [form] (if (clojure.core/and (seq? form) (= 'quote (first form))) (second form) form))
 
-(defmacro defquery
-  [name params query]
-  (let [params (mapv (fn [[name type]] [(dequote name) {:type type :card :singleton}]) params)
-        query (eval query)]
-    (if (every? #(clojure.core/and (symbol? (first %)) (str/starts-with? (str (first %)) "$"))
-                params)
-      (if (every? #(keyword? (:type (last %))) params)
-        (let [args (vec (map first params))
-              param-binding (into {} params)
-              compiled (binding [*clogel-param-bindings* param-binding] (compile-query query))]
-          `(defn ~(dequote name)
-             ~args
-             (try (client/query
-                   ~compiled
-                   ~(into {} (map (fn [[p a]] [(str (first p)) a]) (map vector params args))))
-                  (catch Throwable e#
-                    (throw (ex-info "Exception in Gel query execution: "
-                                    {:message (.getMessage e#)
-                                     :cause   (.getCause e#)
-                                     :stack   (map #(str "  at" %) (.getStackTrace e#))}))))))
-        (throw (ex-info (str
-                         "Every param binding for a defquery must have the form [$symbol :type],"
-                         "bindings received: "
-                         params)
-                        {})))
-      (throw
-       (ex-info
-        "Every parameter for defquery must be a symbol starting with $ (EdgeQL parameter syntax)"
-        {})))))
 
-(comment
-  (defquery 'store-api-key
-            [['$hashed-key :str] ['$user-id :str]]
-            (-> (top/with [['user
-                            (-> (top/select {:user/User [:apiKeys]})
-                                (top/filter [:= '.id '$user-id]))]])
-                (top/select (if_else #{}
-                                     (gte (count 'user.apiKeys) 5)
-                                     (update {:user/User [{:= {:apiKeys (top/insert
-                                                                         {:user/User
-                                                                          [{:= {:key '$hashed-key}}
-                                                                           {:= {:user
-                                                                                'user}}]})}}]}))))))
+(defquery 'store-api-key
+          [['$hashed-key :str] ['$userid :str]]
+          (-> (top/with [['user
+                          (-> (top/select {:user/User [:apiKeys]})
+                              (top/filter [:= '.id '$userid]))]])
+              (top/select (if_else #{}
+                                   (gte (count 'user.apiKeys) 5)
+                                   (-> (update :user/User)
+                                       (set [{:+= {:apiKeys (top/insert {:user/ApiKey
+                                                                         [{:= {:key '$hashed-key}}
+                                                                          {:= {:user
+                                                                               'user}}]})}}]))))))
 
 (defquery 'auth-user
           [['$email :str] ['$hashed :str]]
@@ -295,6 +267,8 @@
 (defquery 'test-query
           [['$test :int64] ['$test2 :int64]]
           (-> (top/select ['$test '$test2])))
+
+
 
 (comment
   (query "select 42")
