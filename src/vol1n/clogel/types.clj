@@ -12,18 +12,20 @@
 ;; x ≥ s iff (castable? s x)
 (defn lub
   [types]
-  (let [types (map #(or (:object-type %) %) types)
-        lubbed (if (apply = types)
-                 (first types)
-                 (reduce (fn [acc x]
-                           (println "acc" acc "x" x)
-                           (if (or (nil? acc) (implicit-castable? acc x)) x acc))
-                         nil
-                         (filter #(every? (fn [s] (implicit-castable? s %))
-                                          (filter (fn [t] (not (or (nil? t) (:error/error t))))
-                                                  types))
-                                 (keys implicit-casts-map))))]
-    lubbed))
+  (if (empty? types)
+    :empty
+    (let [types (map #(or (:object-type %) %) types)
+          lubbed (if (apply = types)
+                   (first types)
+                   (reduce (fn [acc x]
+                             (println "acc" acc "x" x)
+                             (if (or (nil? acc) (implicit-castable? acc x)) x acc))
+                           nil
+                           (filter #(every? (fn [s] (implicit-castable? s %))
+                                            (filter (fn [t] (not (or (nil? t) (:error/error t))))
+                                                    types))
+                                   (keys implicit-casts-map))))]
+      lubbed)))
 
 (comment
   (lub [:int64 :int32]))
@@ -56,6 +58,7 @@ FILTER EXISTS (
 (defn build-abstract-types
   []
   (into {:anytype   (->AbstractType :anytype (fn [_] true))
+         :empty     (->AbstractType :empty (fn [_] true))
          :anyobject (->AbstractType :anyobject
                                     (set (map #(gel-type->clogel-type (:name %))
                                               (get-all-objects))))}

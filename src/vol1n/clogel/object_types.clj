@@ -2,7 +2,7 @@
   (:require [clojure.string :as str]
             [vol1n.clogel.util :refer
              [gel-type->clogel-type ->Node ->Overload remove-colon-kw max-card
-              *clogel-dot-access-context* *clogel-with-bindings*]]
+              *clogel-dot-access-context* *clogel-with-bindings* *clogel-param-bindings*]]
             [vol1n.clogel.castable :refer [implicit-castable? validate-object-type-cast]]
             [vol1n.clogel.object-util :refer [object-registry raw-objects]]))
 
@@ -204,7 +204,8 @@
         t
         (if t
           (recur (rest p)
-                 (let [type (get resolved-type (first p))]
+                 (let [type (or (get resolved-type (first p))
+                                (get (:type resolved-type) (first p)))]
                    (if (:type type)
                      type
                      (throw (ex-info (str "Type " t " does not have field " (first p))
@@ -214,27 +215,27 @@
 (defn validate-dot-access
   [sym]
   (if (symbol? sym)
-    (let
-      [as-str (str sym)
-       access-path
-       (if (= (first as-str) \.)
-         (if *clogel-dot-access-context*
-           (cons (or (:object-type (:type *clogel-dot-access-context*))
-                     (or (:type (:type *clogel-dot-access-context*))
-                         (:type *clogel-dot-access-context*)))
-                 (rest (map keyword (str/split as-str #"\."))))
-           (throw (ex-info "Tried to use leading dot access with no object context"
-                           {:dot-access-form sym})))
-         (let [kws (mapv keyword (str/split as-str #"\."))]
-           (if-let [with-binding (get *clogel-with-bindings*
-                                      (symbol (remove-colon-kw (first kws))))]
-             (into [(or (:type (:type with-binding)) (:type with-binding))] (rest kws))
-             (if (not (contains? object-registry (first kws)))
-               (throw
-                (ex-info
-                 "Invalid dot access form, leading with neither a dot nor a valid object type not a valid symbol"
-                 {:error/error true}))
-               kws))))]
+    (let [as-str (str sym)
+          access-path
+          (if (= (first as-str) \.)
+            (if *clogel-dot-access-context*
+              (cons (or (:object-type (:type *clogel-dot-access-context*))
+                        (or (:type (:type *clogel-dot-access-context*))
+                            (:type *clogel-dot-access-context*)))
+                    (rest (map keyword (str/split as-str #"\."))))
+              (throw (ex-info "Tried to use leading dot access with no object context"
+                              {:dot-access-form sym})))
+            (let [kws (mapv keyword (str/split as-str #"\."))]
+              (if-let [with-binding
+                       (or (get *clogel-with-bindings* (symbol (remove-colon-kw (first kws))))
+                           (get *clogel-param-bindings* (symbol (remove-colon-kw (first kws)))))]
+                (into [(or (:type (:type with-binding)) (:type with-binding))] (rest kws))
+                (if (not (contains? object-registry (first kws)))
+                  (throw (ex-info (str "Invalid symbol form: "
+                                       sym
+                                       " does not lead with a dot or valid object type")
+                                  {:error/error true}))
+                  kws))))]
       (resolve-path (rest access-path)
                     {:type (first access-path)
                      :card (if (and *clogel-dot-access-context*
