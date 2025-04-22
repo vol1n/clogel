@@ -5,7 +5,8 @@
             [vol1n.clogel.collection :refer [clogel-collections]]
             [vol1n.clogel.functions-operators :refer [defgelfuncs defgeloperators gel-index]]
             [vol1n.clogel.functions-operators :as func]
-            [vol1n.clogel.object-types :refer [defgelobjects dot-access]]
+            [vol1n.clogel.object-types :refer
+             [defgelobjects dot-access assignment-operators clogel-free-object]]
             [vol1n.clogel.util :refer
              [*clogel-dot-access-context* *clogel-with-bindings* *clogel-param-bindings*
               remove-colon-kw gel-type->clogel-type]]
@@ -17,7 +18,7 @@
   (:import [com.geldata.driver.exceptions GelErrorException])
   (:refer-clojure :exclude
                   [update for filter group-by min range find max assert count concat mod or not
-                   distinct destructure and <= / > < + >= - *]))
+                   distinct destructure and <= / > < + >= - * set]))
 ; select filter offset group-by limit update insert
               ;delete
 (def select top/select)
@@ -27,6 +28,7 @@
 (def limit top/limit)
 (def update top/update)
 (def insert top/insert)
+(def set top/set)
 (def for top/for)
 (def delete top/delete)
 (def with top/with)
@@ -54,16 +56,15 @@
          gelobject-registry
          gelcast-registry
          clogel-top-level-statements
+         {:free-object clogel-free-object}
          {:scalar clogel-scalars}
          {:collection clogel-collections}
          gel-index))
 
-(def mod-keys #{:limit :order-by :filter :offset})
+(def mod-keys #{:limit :order-by :filter :offset :set :by :union})
 
 (defn clogel->edgeql
   [edn]
-  (println "with-bindings" *clogel-param-bindings*)
-  (println "edn" edn)
   (if (clojure.core/and (symbol? edn) (contains? *clogel-with-bindings* edn))
     (assoc (get *clogel-with-bindings* edn) :value (str edn))
     (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))
@@ -71,7 +72,12 @@
              :value
              (str \< (remove-colon-kw (:type (get *clogel-param-bindings* edn))) \> edn))
       (let [node-key (cond (clojure.core/and (map? edn) (:with edn)) :with
-                           (map? edn) (some #(when (not (contains? mod-keys %)) %) (keys edn))
+                           (map? edn) (some #(when (clojure.core/not (contains? mod-keys %)) %)
+                                            (keys edn))
+                           (clojure.core/and (vector? edn)
+                                             (every? map? edn)
+                                             (every? #(assignment-operators (key (first %))) edn))
+                           :free-object
                            (clojure.core/and (vector? edn) (keyword? (first edn))) (first edn)
                            (keyword? edn) edn
                            (symbol? edn) :dot-access
@@ -228,7 +234,12 @@
                       (top/unless-conflict '.email)))
   (query {:delete :User})
   (clogel->edgeql (-> (top/with [['x (select :user/User)]])
-                      (top/select 'x.name))))
+                      (top/select 'x.name)))
+  (clogel->edgeql [{:= {:hello "world"}}])
+  (clogel->edgeql {:user/User [{:= {:hello "world"}}]})
+  (clogel->edgeql {:update :user/User :set [{:= {:hello "world"}}]}) ;;throws
+  (clogel->edgeql {:update :user/User :set [{:= {:email "hello@world.com"}}]})
+  (clogel->edgeql {:update :user/User :set [{:+= {:apiKeys {:select :user/ApiKey}}}]}))
 
 (defn dequote [form] (if (clojure.core/and (seq? form) (= 'quote (first form))) (second form) form))
 
@@ -236,16 +247,12 @@
   [name params query]
   (let [params (mapv (fn [[name type]] [(dequote name) {:type type :card :singleton}]) params)
         query (eval query)]
-    (println params)
-    (println (map #(type (first %)) params))
     (if (every? #(clojure.core/and (symbol? (first %)) (str/starts-with? (str (first %)) "$"))
                 params)
       (if (every? #(keyword? (:type (last %))) params)
         (let [args (vec (map first params))
               param-binding (into {} params)
               compiled (binding [*clogel-param-bindings* param-binding] (compile-query query))]
-          (println "heryo")
-          (println "param-binding" param-binding)
           `(defn ~(dequote name)
              ~args
              (try (client/query
@@ -266,18 +273,19 @@
         "Every parameter for defquery must be a symbol starting with $ (EdgeQL parameter syntax)"
         {})))))
 
-(defquery 'store-api-key
-          [['$hashed-key :str] ['$user-id :str]]
-          (-> (top/with [['user
-                          (-> (top/select {:user/User [:apiKeys]})
-                              (top/filter [:= '.id '$user-id]))]])
-              (top/select (if_else #{}
-                                   (gte (count 'user.apiKeys) 5)
-                                   (update {:user/User [{:= {:apiKeys (top/insert
-                                                                       {:user/User
-                                                                        [{:= {:key '$hashed-key}}
-                                                                         {:= {:user
-                                                                              'user}}]})}}]})))))
+(comment
+  (defquery 'store-api-key
+            [['$hashed-key :str] ['$user-id :str]]
+            (-> (top/with [['user
+                            (-> (top/select {:user/User [:apiKeys]})
+                                (top/filter [:= '.id '$user-id]))]])
+                (top/select (if_else #{}
+                                     (gte (count 'user.apiKeys) 5)
+                                     (update {:user/User [{:= {:apiKeys (top/insert
+                                                                         {:user/User
+                                                                          [{:= {:key '$hashed-key}}
+                                                                           {:= {:user
+                                                                                'user}}]})}}]}))))))
 
 (defquery 'auth-user
           [['$email :str] ['$hashed :str]]

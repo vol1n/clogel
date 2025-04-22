@@ -1,7 +1,8 @@
 (ns vol1n.clogel.castable
   (:require [vol1n.clogel.client :refer [query]]
             [vol1n.clogel.object-util :refer [object-registry]]
-            [vol1n.clogel.util :refer [gel-type->clogel-type]]))
+            [vol1n.clogel.util :refer [gel-type->clogel-type]]
+            [clojure.set :as set]))
 
 (declare implicit-castable? validate-object-type-cast)
 
@@ -56,7 +57,6 @@ select schema::Cast {
 
 (defn implicit-castable?
   [from to]
-
   (if (some map? [from to])
     (if (not (every? map? [from to]))
       false
@@ -72,7 +72,6 @@ select schema::Cast {
                    (if (contains? object-registry to)
                      (validate-object-type-cast to from)
                      (if (= to :anytype) true (path-exists? implicit-casts-map from to))))]
-
       result)))
 
 (comment
@@ -105,28 +104,35 @@ select schema::Cast {
           "not an object type so not castable to object-type.
 Did you try and use a scalar as an object?"
           object-type)})
-      :else
-      (let [required-fields (filter (fn [[k v]] (and (:required v) (not= k :id))) object-type-map)
-            fields (reduce (fn [acc [k v]]
-                             (let [type-def (get object-type-map k)]
-                               (if (and (implicit-castable? (:type v) (:type (get cast-type k)))
-                                        (card-gte? (:card v) (:card type-def)))
-                                 (conj acc k)
-                                 (reduced {:error/error   true
-                                           :error/message (str
-                                                           "Key with cardinality " (:card v)
-                                                           " and type " (:type v)
-                                                           "does not cast onto object field with "
-                                                           {:card (:card type-def)
-                                                            :type (:type type-def)})}))))
-                           []
-                           cast-type)]
-        (if (:error/error fields)
-          fields
-          (do
-              (if (not (every? (set required-fields) fields))
-                {:error/error   true
-                 :error/message (str "Not every required field is there for " object-type
-                                     " Required: " required-fields
-                                     " Received " fields)}
-                true)))))))
+      :else (let [required-fields (keep (fn [[k v]]
+                                          (when (and (:required v) (not (#{:id :__type__} k))) k))
+                                        object-type-map)
+                  fields (reduce (fn [acc [k v]]
+                                   (let [type-def (get object-type-map k)]
+                                     (if type-def
+                                       (if (and (implicit-castable? (:type v)
+                                                                    (:type (get cast-type k)))
+                                                (card-gte? (:card v) (:card type-def)))
+                                         (conj acc k)
+                                         (reduced {:error/error true
+                                                   :error/message
+                                                   (str "Key with cardinality "
+                                                        (:card v)
+                                                        " and type "
+                                                        (:type v)
+                                                        "does not cast onto object field with "
+                                                        "type "
+                                                        (:type type-def)
+                                                        {:card (:card type-def)
+                                                         :type (:type type-def)})}))
+                                       (conj acc k))))
+                                 []
+                                 cast-type)]
+              (if (:error/error fields)
+                fields
+                (if (not (set/superset? (set fields) (set required-fields)))
+                  {:error/error   true
+                   :error/message (str "Not every required field is there for " object-type
+                                       " Required: " required-fields
+                                       " Received " fields)}
+                  true))))))

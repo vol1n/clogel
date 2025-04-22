@@ -1,7 +1,7 @@
 (ns vol1n.clogel.top-level
   (:require [vol1n.clogel.castable :refer [implicit-castable?]]
             [vol1n.clogel.util :refer [->Node ->Overload remove-colon-kw]])
-  (:refer-clojure :exclude [update for filter]))
+  (:refer-clojure :exclude [update for filter set]))
 
 (defn validate-map
   [m validator-map]
@@ -13,7 +13,7 @@
     {:error/message "extraneous key"
      :error/error   true
      :error/input   m
-     :error/allowed (set (keys validator-map))}))
+     :error/allowed (clojure.core/set (keys validator-map))}))
 
 (def modifier-validators
   {:order-by {:fn      #(or (= (:card %) :singleton)
@@ -68,20 +68,14 @@
 
 (defn update-validator
   [update-statement]
-  (let [update (:update update-statement)
-        limit (:limit update-statement)]
+  (let [update (:update update-statement)]
     (if (not update)
       (throw (ex-info "should be unreachable" {}))
       (let [failure (validate-map update-statement
-                                  (merge {:update {:fn      #(:updatable (:type %))
-                                                   :message "Should be unreachable, right?"}}
-                                         modifier-validators))]
-        (if failure
-          failure
-          {:type (:type update)
-           :card (if (and (= limit 1) (not= :singleton (:card update)))
-                   :optional
-                   (:card update))})))))
+                                  {:update {:fn #(:updatable (:type %)) :message "Not updateable"}
+                                   :filter (get modifier-validators :filter)
+                                   :set    {:fn #(:settable (:type %)) :message "Not settable"}})]
+        (if failure failure {:type (:type update) :card (:card update)})))))
 
 (defn delete-validator
   [delete-statement]
@@ -161,6 +155,7 @@
                   :by              2.3
                   :insert          4
                   :update          5
+                  :set             5.1
                   :unless-conflict 4.5
                   :else            4.75
                   :order-by        6}]
@@ -336,6 +331,8 @@
 (defn limit ([amount] (limit {} amount)) ([statement amount] (assoc statement :limit amount)))
 
 (defn update ([val] (update {} val)) ([statement val] (assoc statement :update val)))
+
+(defn set ([val] (set {} val)) ([statement val] (assoc statement :set val)))
 
 (defn insert ([val] (insert {} val)) ([statement val] (assoc statement :insert val)))
 

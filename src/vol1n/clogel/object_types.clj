@@ -23,73 +23,117 @@
               :message "Offset statement must be a singleton"}
    :filter   {:fn #(implicit-castable? (:type %) :bool) :message "Filter statement must be bool"}})
 
+(def assignment-operators #{:= :+=})
 
 (defn build-object-validator
   [object-type]
   (fn validator [object]
     {:type
-     (cond (keyword? object) (if (= object (keyword (:clogel-name object-type)))
-                               {:card :many :type (:clogel-name object-type) :deletable true}
-                               (throw (ex-info "We've got problems" {})))
-           (and (map? object) (vector? (last (first object))))
-           (do
-             (let [vec (last (first object))
-                   type (get object-registry (key (first object)))
-                   only-assignments (every? (fn [item] (and (map? item) (= (key (first item)) :=)))
-                                            vec)]
-               (if (not type)
-                 (throw (ex-info (str "Cannot project non-object type "
-                                      (or (key (first object)) object))
-                                 {:error/type type :error/error true}))
-                 (let [reduced
-                       (reduce
-                        (fn [acc item]
-                          (cond (and (map? item) (= (key (first item)) :=))
-                                ;; assignment
-                                (assoc acc
-                                       (key (first (val (first item))))
-                                       (val (first (val (first item)))))
-                                (map? item)
-                                ;; nesting
-                                (let [main-key
-                                      (some #(when (not (contains? mod-keys (key %))) (key %)) item)
-                                      modifiers (dissoc item main-key)]
-                                  (doseq [[mod val] modifiers]
-                                    (when (not ((get-in modifier-validators [mod :fn]) val))
-                                      (throw (ex-info
-                                              (str "Value " val " for modifier " mod "invalid")
+     (cond
+       (keyword? object)
+       (if (= object (keyword (:clogel-name object-type)))
+         {:card :many :type (:clogel-name object-type) :deletable true :updatable true}
+         (throw (ex-info "We've got problems" {})))
+       (and (map? object) (vector? (last (first object))))
+       (do
+         (let [vec (last (first object))
+               type (if (= (key (first object)) :free-object)
+                      :free-object
+                      (get object-registry (key (first object))))
+               only-assignments
+               (every? (fn [item] (and (map? item) (assignment-operators (key (first item))))) vec)
+               only-existing-assignments
+               (and only-assignments
+                    (every? (fn [item] (get type (key (first (val (first item)))))) vec))
+               only= (and only-assignments (every? (fn [item] (#{:=} (key (first item)))) vec))]
+           (if (not type)
+             (throw (ex-info (str "Cannot project non-object type "
+                                  (or (key (first object)) object))
+                             {:error/type type :error/error true}))
+             (let [reduced
+                   (reduce
+                    (fn [acc item]
+                      (cond
+                        (and (map? item) (assignment-operators (key (first item))))
+                        ;; assignment
+                        (if (= (key (first item)) :=)
+                          (assoc acc
+                                 (key (first (val (first item))))
+                                 (val (first (val (first item)))))
+                          (let [assign-to (-> item
+                                              first
+                                              val
+                                              first
+                                              key)
+                                assign-value (-> item
+                                                 first
+                                                 val
+                                                 first
+                                                 val)
+                                attribute-type (get type assign-to)]
+                            (if (nil? attribute-type)
+                              (throw (ex-info (str "Cannot use assignment operator (other than :=)"
+                                                   "on non-existent field "
+                                                   assign-to)
+                                              {:error/error true}))
+                              (if (validate-object-type-cast (:type assign-value)
+                                                             (:type attribute-type))
+                                (assoc acc assign-to attribute-type)
+                                (throw (ex-info (str "Tried to assign type " (:type assign-value)
+                                                     " to " (:type attribute-type)
+                                                     " for field: " assign-to)
+                                                {:error/error true}))))))
+                        (map? item)
+                        ;; nesting
+                        (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %))
+                                             item)
+                              modifiers (dissoc item main-key)]
+                          (doseq [[mod val] modifiers]
+                            (when (not ((get-in modifier-validators [mod :fn]) val))
+                              (throw (ex-info (str "Value " val " for modifier " mod "invalid")
                                               {:error/error true})))
-                                    modifiers)
-                                  (assoc acc
-                                         main-key
-                                         (if (true? (get item main-key))
-                                           main-key
-                                           (validator
-                                            {(or (:type (get type main-key))
-                                                 (throw (ex-info
-                                                         (str "Key " main-key " not found on type")
+                            modifiers)
+                          (assoc acc
+                                 main-key
+                                 (if (true? (get item main-key))
+                                   main-key
+                                   (validator
+                                    {(or (:type (get type main-key))
+                                         (throw (ex-info (str "Key " main-key " not found on type")
                                                          {})))
-                                             (get item main-key)}))))
-                                (keyword? item)
-                                (if (contains? type item)
-                                  (assoc acc item (get type item))
-                                  (throw (ex-info (str "Key " item " does not exist on type" type)
-                                                  {:error/error true})))
-                                :else
-                                (throw
-                                 (ex-info
-                                  "Invalid type within projection vector expected map or keyword"
-                                  {}))))
-                        {}
-                        vec)]
-                   (assoc (cond-> reduced
-                            only-assignments (assoc :updatable true)
-                            (and only-assignments
-                                 (validate-object-type-cast (:clogel-name object-type) reduced))
-                            (assoc :insertable true))
-                          :object-type
-                          (:clogel-name object-type)))))))
+                                     (get item main-key)}))))
+                        (keyword? item) (if (contains? type item)
+                                          (assoc acc item (get type item))
+                                          (throw (ex-info (str "Key " item
+                                                               " does not exist on type" type)
+                                                          {:error/error true})))
+                        :else (throw
+                               (ex-info
+                                "Invalid type within projection vector expected map or keyword"
+                                {}))))
+                    {}
+                    vec)]
+               (assoc (cond-> reduced
+                        only-existing-assignments (assoc :settable true)
+                        (and only=
+                             (:clogel-name object-type)
+                             (not (:error/error
+                                   (validate-object-type-cast (:clogel-name object-type) reduced))))
+                        (assoc :insertable true))
+                      :object-type
+                      (or (:clogel-name object-type) :free-object)))))))
      :card :many}))
+
+(defn validate-free-object
+  [object] ;; object is a vector
+  (let [object-type (or (:object-type (:type *clogel-dot-access-context*))
+                        (or (:type (:type *clogel-dot-access-context*))
+                            (:type *clogel-dot-access-context*))
+                        :free-object)
+        validator (if (= object-type :free-object)
+                    (build-object-validator nil)
+                    (build-object-validator object-type))]
+    (validator {object-type object})))
 
 (defn compile-modifier [k child] (str (remove-colon-kw k) " " child))
 
@@ -111,13 +155,17 @@
              (fn [acc item]
                (cond (keyword? item) {:compiled  (str (:compiled acc) (remove-colon-kw item) ",\n")
                                       :remaining (:remaining acc)}
-                     (and (map? item) (= (key (first item)) :=))
-                     {:compiled  (str (:compiled acc)
-                                      (remove-colon-kw (key (first (get item :=))))
-                                      " := "
-                                      (first (:remaining acc))
-                                      ",\n")
-                      :remaining (rest (:remaining acc))}
+                     (and (map? item) (assignment-operators (key (first item))))
+                     (let [op (key (first item))
+                           op-string (if (= op :=) ":=" (remove-colon-kw op))]
+                       {:compiled  (str (:compiled acc)
+                                        (remove-colon-kw (key (first (get item op))))
+                                        " "
+                                        op-string
+                                        " "
+                                        (first (:remaining acc))
+                                        ",\n")
+                        :remaining (rest (:remaining acc))})
                      :else
                      (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %)) item)
                            modifiers (dissoc item main-key)
@@ -144,6 +192,10 @@
              proj)]
     red))
 
+(defn compile-free-object
+  [obj & compiled-children]
+  (str "{\n" (:compiled (apply compile-projection (into [obj] compiled-children))) "\n}"))
+
 (defn build-object-compiler
   [object-type]
   (fn [object & compiled-children]
@@ -161,10 +213,10 @@
   [proj & types]
   (reduce (fn [acc item]
             (cond (keyword? item) {:vec (conj (:vec acc) item) :remaining (:remaining acc)}
-                  (and (map? item) (= (key (first item)) :=))
+                  (and (map? item) (assignment-operators (key (first item))))
                   {:vec       (conj (:vec acc)
-                                    {:= {(key (first (val (first item)))) (first (:remaining
-                                                                                  acc))}})
+                                    {(key (first item)) {(key (first (val (first item))))
+                                                         (first (:remaining acc))}})
                    :remaining (rest (:remaining acc))}
                   :else (let [result (apply build-projection-type-form
                                             (into [(val (first item))] (:remaining acc)))]
@@ -172,6 +224,10 @@
                            :remaining (:remaining result)})))
           {:vec [] :remaining types}
           proj))
+
+(defn build-free-object-type-form
+  [proj types]
+  (:vec (apply build-projection-type-form (into [proj] types))))
 
 (def build-type-form
   (fn [object types]
@@ -184,10 +240,13 @@
   [proj]
   (reduce (fn [acc item]
             (cond (keyword? item) acc
-                  (and (map? item) (= (key (first item)) :=)) (conj acc (val (first (get item :=))))
+                  (and (map? item) (assignment-operators (key (first item))))
+                  (conj acc (val (first (get item (key (first item))))))
                   :else (concat acc (get-projection-children item))))
           []
           proj))
+
+(defn get-free-object-children [obj] (get-projection-children {:free-object obj}))
 
 (def generate-object-children
   (fn [object]
@@ -251,6 +310,12 @@
                        (fn [_] nil)
                        (fn [call _] call)
                        [(->Overload validate-dot-access compile-dot-access)])})
+
+(def clogel-free-object
+  (->Node :free-object
+          get-free-object-children
+          build-free-object-type-form
+          [(->Overload validate-free-object compile-free-object)]))
 
 (defmacro defgelobjects
   []
