@@ -246,27 +246,44 @@
 (defn dequote [form] (if (clojure.core/and (seq? form) (= 'quote (first form))) (second form) form))
 
 
-(defquery 'store-api-key
-          [['$hashed-key :str] ['$userid :str]]
-          (-> (top/with [['user
-                          (-> (top/select {:user/User [:apiKeys]})
-                              (top/filter [:= '.id '$userid]))]])
-              (top/select (if_else #{}
-                                   (gte (count 'user.apiKeys) 5)
-                                   (-> (update :user/User)
-                                       (set [{:+= {:apiKeys (top/insert {:user/ApiKey
-                                                                         [{:= {:key '$hashed-key}}
-                                                                          {:= {:user
-                                                                               'user}}]})}}]))))))
+(defmacro defquery
+  [name params query]
+  (let [params (mapv (fn [[name type]] [(dequote name) {:type type :card :singleton}]) params)
+        query (eval query)]
+    (if (every? #(clojure.core/and (symbol? (first %)) (str/starts-with? (str (first %)) "$"))
+                params)
+      (if (every? #(keyword? (:type (last %))) params)
+        (let [args (vec (map first params))
+              param-binding (into {} params)
+              compiled (binding [*clogel-param-bindings* param-binding] (compile-query query))]
+          `(defn ~(dequote name)
+             ~args
+             (try (client/query
+                   ~compiled
+                   ~(into {} (map (fn [[p a]] [(str (first p)) a]) (map vector params args))))
+                  (catch Throwable e#
+                    (throw (ex-info "Exception in Gel query execution: "
+                                    {:message (.getMessage e#)
+                                     :cause   (.getCause e#)
+                                     :stack   (map #(str "  at" %) (.getStackTrace e#))}))))))
+        (throw (ex-info (str
+                         "Every param binding for a defquery must have the form [$symbol :type],"
+                         "bindings received: "
+                         params)
+                        {})))
+      (throw
+       (ex-info
+        "Every parameter for defquery must be a symbol starting with $ (EdgeQL parameter syntax)"
+        {})))))
 
-(defquery 'auth-user
-          [['$email :str] ['$hashed :str]]
-          (-> (top/select 42)
-              (top/filter (and (eq '$email "email") (eq '$hashed "email")))))
-
-(defquery 'test-query
-          [['$test :int64] ['$test2 :int64]]
-          (-> (top/select ['$test '$test2])))
+(comment
+  (defquery 'auth-user
+            [['$email :str] ['$hashed :str]]
+            (-> (top/select 42)
+                (top/filter (and (eq '$email "email") (eq '$hashed "email")))))
+  (defquery 'test-query
+            [['$test :int64] ['$test2 :int64]]
+            (-> (top/select ['$test '$test2]))))
 
 
 
