@@ -65,8 +65,6 @@
 
 (defn clogel->edgeql
   [edn]
-  (println "edn" edn)
-  (println "with-bindings" *clogel-with-bindings*)
   (if (clojure.core/and (symbol? edn) (contains? *clogel-with-bindings* edn))
     (assoc (get *clogel-with-bindings* edn) :value (str edn))
     (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))
@@ -171,7 +169,8 @@
 
 (defn compile-query
   [q]
-  (let [compiled (:value (clogel->edgeql q))]
+  (let [result (clogel->edgeql q)
+        compiled (:value result)]
     (subs compiled 1 (dec (clojure.core/count compiled)))))
 
 (comment
@@ -285,7 +284,18 @@
             [['$test :int64] ['$test2 :int64]]
             (-> (top/select ['$test '$test2]))))
 
-
+(defquery 'store-api-key!
+          [['$hashed-key :str] ['$user-id :str]]
+          (-> (top/with [['user
+                          (assert_single (-> (top/select {:user/User [:apiKeys]})
+                                             (top/filter [:= '.id '$user-id])))]])
+              (top/select (if_else '()
+                                   (gte (count 'user.apiKeys) 5)
+                                   (-> (top/update :user/User)
+                                       (top/set [{:+= {:apiKeys (top/insert
+                                                                 {:user/ApiKey
+                                                                  [{:= {:key '$hashed-key}}
+                                                                   {:= {:user 'user}}]})}}]))))))
 
 (comment
   (query "select 42")

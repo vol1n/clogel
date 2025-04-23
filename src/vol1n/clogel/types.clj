@@ -1,7 +1,6 @@
 (ns vol1n.clogel.types
   (:require [vol1n.clogel.util :refer [gel-type->clogel-type]]
-            [vol1n.clogel.castable :refer
-             [implicit-castable? implicit-casts-map validate-object-type-cast]]
+            [vol1n.clogel.castable :refer [implicit-castable? implicit-casts-map is-ancestor?]]
             [vol1n.clogel.object-util :refer [object-registry]]
             [vol1n.clogel.client :refer [query]]))
 
@@ -14,21 +13,28 @@
   [types]
   (if (empty? types)
     :empty
-    (let [types (map #(or (:object-type %) %) types)
+    (let [objects? (every? #(or (:object-type %) (get object-registry %) (= :GelObject %) (nil? %))
+                           types)
+          comparison (if objects? is-ancestor? implicit-castable?)
+          all-types (if objects? (keys object-registry) (keys implicit-casts-map))
+          types (map #(or (:object-type %) %) types)
           lubbed (if (apply = types)
                    (first types)
-                   (reduce (fn [acc x]
-                             (println "acc" acc "x" x)
-                             (if (or (nil? acc) (implicit-castable? acc x)) x acc))
+                   (reduce (fn [acc x] (if (or (nil? acc) (comparison acc x)) x acc))
                            nil
-                           (filter #(every? (fn [s] (implicit-castable? s %))
-                                            (filter (fn [t] (not (or (nil? t) (:error/error t))))
-                                                    types))
-                                   (keys implicit-casts-map))))]
+                           (filter #(every?
+                                     (fn [s] (let [comparison-res (comparison % s)] comparison-res))
+                                     (filter (fn [t]
+                                               (not (or (nil? t) (:error/error t) (= t :empty))))
+                                             types))
+                                   all-types)))]
       lubbed)))
 
 (comment
-  (lub [:int64 :int32]))
+  (lub [:int64 :int32])
+  (lub [:int64 nil])
+  (lub [:user/User :GelObject]) ; Fix this :(
+)
 
 (defrecord AbstractType [kw children])
 

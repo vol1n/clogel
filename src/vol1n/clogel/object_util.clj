@@ -12,7 +12,8 @@
   [raw]
   (reduce (fn [acc obj]
             (assoc acc
-                   (gel-type->clogel-type (:name obj))
+                   (let [name (gel-type->clogel-type (:name obj))]
+                     (if (= name :Object) :GelObject name))
                    (let [parse-properties
                          (fn [properties]
                            (reduce (fn [acc prop]

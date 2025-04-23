@@ -129,7 +129,7 @@
                 (if (:error/error new) new (update-annotations variadic-param old new)))))
           positional-validator)]
     (fn [call] ;; call => [:fn pos-arg1 pos-arg2 ... { named only args }]
-      ;;
+      (println "call" call)
       (let [{assignment-args true positional-args false}
             (group-by #(and (map? %) (= (key (first %)) :=)) (rest call))
             deref-if-needed #(if (instance? clojure.lang.IDeref %) @% %)
@@ -171,11 +171,9 @@
                  (str (chop-prefix (:name f) "std::") " " (first compiled-children)))
       "Ternary" (fn [[_ & args] & compiled-children]
                   (str (first compiled-children)
-                       "if " (second compiled-children)
+                       " if " (second compiled-children)
                        " else " (nth compiled-children 2))))
     (fn [[_ & args] & compiled-children]
-      (println "compiled-children" compiled-children)
-      (println "args" args)
       (str (:name f)
            "("
            (chop-last (str/join ",\n"
@@ -373,7 +371,7 @@ filter .name = 'std::[]';
   (get-slices))
 (def gel-index
   {:access (->Node :access
-                   (fn [[_ & args]] (println "args" args) (into [] args))
+                   (fn [[_ & args]] (into [] args))
                    (fn [_ types] (into [:index] types))
                    (mapv #(->Overload (build-index-slice-validator %) index-slice-compiler)
                          (get-slices)))})

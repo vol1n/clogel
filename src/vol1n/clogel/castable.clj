@@ -1,6 +1,6 @@
 (ns vol1n.clogel.castable
   (:require [vol1n.clogel.client :refer [query]]
-            [vol1n.clogel.object-util :refer [object-registry]]
+            [vol1n.clogel.object-util :refer [object-registry raw-objects]]
             [vol1n.clogel.util :refer [gel-type->clogel-type]]
             [clojure.set :as set]))
 
@@ -17,6 +17,7 @@ select schema::Cast {
     from_type: { name },
     to_type: { name },
 }"))
+
 
 
 (defonce casts (get-casts))
@@ -47,9 +48,47 @@ select schema::Cast {
                (concat (rest q) (filter #(not (contains? visited %)) (get g (first q)))))))))
 
 
+(defn objects->ancestors-map
+  [entries]
+  (reduce (fn [acc obj]
+            (update acc
+                    (:clogel-name obj)
+                    #(reduce (fn [acc a] (conj acc a)) (or % #{}) (:ancestor-names obj))))
+          {}
+          entries))
+
+(defn parse-objects
+  [objects]
+  (map #(-> %
+            (assoc :clogel-name
+                   (let [name (gel-type->clogel-type (:name %))]
+                     (if (= name :Object) :GelObject name)))
+            (assoc :ancestor-names
+                   (reduce (fn [acc a]
+                             (conj acc
+                                   (let [name (-> a
+                                                  :name
+                                                  gel-type->clogel-type)]
+                                     (if (= name :Object) :GelObject name))))
+                           #{}
+                           (:ancestors %))))
+       objects))
+
+(def ancestry-map (objects->ancestors-map (parse-objects raw-objects)))
+
+(println "ancestry-map" ancestry-map)
+
 (comment
   (let [g {:a #{:b :c} :b #{:c} :c #{:a}}] (path-exists? g :b :a))
   (let [g {:a #{:b :c} :b #{:c} :c #{:a}}] (path-exists? g :a :d)))
+
+(defn is-ancestor?
+  [ancestor child]
+  (or (= ancestor child) (path-exists? ancestry-map child ancestor)))
+
+(comment
+  (is-ancestor? :GelObject :user/User)
+  (is-ancestor? :user/User :GelObject))
 
 (defn castable?
   [from to]
@@ -87,12 +126,17 @@ select schema::Cast {
     :optional (#{:empty :singleton :optional} r)
     :many true))
 
+(defn is-object-parent
+  [from to]
+  ;; true is there is a path from 'from' to 'to'
+  ())
+
 (defn validate-object-type-cast
   [object-type cast-type]
   (let [object-type-map (get object-registry object-type)]
     (cond
       (nil? object-type-map) {:error/error   true
-                              :error/message (str "Object type " object-type "not in registry. ")}
+                              :error/message (str "Object type " object-type " not in registry. ")}
       (keyword? cast-type)
       (if (contains? object-registry cast-type)
         (recur object-type (get object-registry cast-type))
@@ -136,4 +180,4 @@ Did you try and use a scalar as an object?"
              :error/message (str "Not every required field is there for " object-type
                                  " Required: " (vec required-fields)
                                  " Received " fields)}
-            true))))))
+            (do (println "CASTABLE") true)))))))
