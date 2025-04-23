@@ -125,7 +125,7 @@ The `defquery` macro is probably the best way to work with Clogel. It compiles y
          (g/unless-conflict '.email)))
                           
 (let [new-user (sign-up! "colin@example.com" hashed-password)]
-    (if (empty? )
+    (if (empty? new-user)
         (println "Email already in use")
         (println "Sign up successful! New User ID: "
                  (-> new-user first :id)))) ; EdgeQL queries return a set, we treat as a Clojure seq
