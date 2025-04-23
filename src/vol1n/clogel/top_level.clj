@@ -37,7 +37,8 @@
       (throw (ex-info "should be unreachable" {}))
       (let [failure (validate-map select-statement
                                   (merge {:select {:fn      (fn [_] true)
-                                                   :message "Should be unreachable, right?"}}
+                                                   :message "Should be unreachable"}}
+                                         {:project {:fn (fn [_] true)}}
                                          modifier-validators))]
         (if failure
           (do (println "failure" failure) failure)
@@ -150,6 +151,7 @@
 (defn sort-keys
   [m]
   (let [priority {:select          1
+                  :project         1.1
                   :group           2
                   :using           2.25
                   :by              2.3
@@ -183,6 +185,7 @@
          "\n" (reduce
                (fn [acc [k child]]
                  (cond (= k type) (str (remove-colon-kw type) " " child "\n" acc)
+                       (= k :project) (str acc " " child "\n")
                        (= k :order-by) (str acc (compile-order-by (get statement :order-by) child))
                        (= k :unless-conflict)
                        (str acc (compile-unless-conflict (get statement :unless-conflict) child))
@@ -249,7 +252,8 @@
   {:select   (->Node
               :select
               (fn [select-statement]
-                (map (fn [k] (get select-statement k)) (sort-keys select-statement)))
+                (map (fn [k] (if (= k :project) {} (get select-statement k)))
+                     (sort-keys select-statement)))
               (fn [select-statement types]
                 (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys select-statement) types))))
               [(->Overload select-validator (build-top-level-compiler :select))])
@@ -316,6 +320,8 @@
                      [(->Overload for-validator compile-for)])})
 
 (defn select ([val] (select {} val)) ([statement val] (assoc statement :select val)))
+
+(defn project ([val] (project {} val)) ([statement val] (assoc statement :project val)))
 
 (defn filter ([by] (filter {} by)) ([statement by] (assoc statement :filter by)))
 

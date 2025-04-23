@@ -28,7 +28,6 @@
 (defn build-object-validator
   [object-type]
   (fn validator [object]
-    (println "validator" object)
     {:type
      (cond
        (keyword? object)
@@ -253,17 +252,12 @@
 
 (defn get-free-object-children
   [obj]
-  (let [children (get-projection-children {:free-object obj})]
-    (println "obj" obj)
-    (println "gfoc" children)
-    children))
+  (let [children (get-projection-children {:free-object obj})] children))
 
 (def generate-object-children
   (fn [object]
     (let [children (cond (keyword? object) nil
                          (map? object) (get-projection-children object))]
-      (println "object" object)
-      (println "goc" children)
       children)))
 
 (defn resolve-path

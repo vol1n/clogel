@@ -22,6 +22,7 @@
 ; select filter offset group-by limit update insert
               ;delete
 (def select top/select)
+(def project top/project)
 (def filter top/filter)
 (def offset top/offset)
 (def group-by top/group-by)
@@ -78,7 +79,14 @@
                                              (every? map? edn)
                                              (every? #(assignment-operators (key (first %))) edn))
                            :free-object
-                           (clojure.core/and (vector? edn) (keyword? (first edn))) (first edn)
+                           (clojure.core/and (vector? edn) (keyword? (first edn)))
+                           (let [key (first edn)]
+                             (if (contains? node-registry key)
+                               key
+                               (if *clogel-dot-access-context*
+                                 :free-object
+                                 (throw (ex-info (str "invalid keyword" key)
+                                                 {:valid-keys (keys node-registry) :passed key})))))
                            (keyword? edn) edn
                            (symbol? edn) :dot-access
                            (coll? edn) :collection
@@ -240,7 +248,9 @@
   (clogel->edgeql {:user/User [{:= {:hello "world"}}]})
   (clogel->edgeql {:update :user/User :set [{:= {:hello "world"}}]}) ;;throws
   (clogel->edgeql {:update :user/User :set [{:= {:email "hello@world.com"}}]})
-  (clogel->edgeql {:update :user/User :set [{:+= {:apiKeys {:select :user/ApiKey}}}]}))
+  (clogel->edgeql {:update :user/User :set [{:+= {:apiKeys {:select :user/ApiKey}}}]})
+  (println (clogel->edgeql {:select  {:update :user/User :set [{:= {:name "Chudley"}}]}
+                            :project [:name :id]})))
 
 (defn dequote [form] (if (clojure.core/and (seq? form) (= 'quote (first form))) (second form) form))
 
