@@ -246,6 +246,20 @@
                                           (str (name replaced))))
                             (fn ~args-vec (into [~replaced] ~(symbol "args")))))))
                    grouped)
+        hyphenate #(str/replace % "_" "-")
+        hyphenated-funcs (map (fn [[fname _]]
+                                (let [kw (edgename->keyword fname)
+                                      replaced (if (= kw :=) :equals kw)
+                                      args-vec ['& 'args]]
+                                  (if (#{"://"} (str kw))
+                                    nil
+                                    `(def ~(symbol (hyphenate (if (namespace replaced)
+                                                                (str/join "::"
+                                                                          [(namespace replaced)
+                                                                           (name replaced)])
+                                                                (str (name replaced)))))
+                                       (fn ~args-vec (into [~replaced] ~(symbol "args")))))))
+                              grouped)
         alias-funcs
         (reduce (fn [acc [alias _]]
                   (if (nil? alias)
@@ -260,7 +274,7 @@
                 grouped-by-alias)
         sym (symbol registry-name)
         def-registry `(def ~sym ~gfr-with-aliases)]
-    `(do ~def-registry ~@alias-funcs ~@funcs))) ;;   ~@funcs
+    `(do ~def-registry ~@alias-funcs ~@funcs ~@hyphenated-funcs))) ;;   ~@funcs
 
 
 (defn get-fns

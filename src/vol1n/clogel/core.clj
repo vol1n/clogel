@@ -9,7 +9,7 @@
              [defgelobjects dot-access assignment-operators clogel-free-object]]
             [vol1n.clogel.util :refer
              [*clogel-dot-access-context* *clogel-with-bindings* *clogel-param-bindings*
-              remove-colon-kw gel-type->clogel-type]]
+              remove-colon-kw gel-type->clogel-type sanitize-kw sanitize-symbol]]
             [vol1n.clogel.top-level :refer [clogel-top-level-statements]]
             [vol1n.clogel.top-level :as top]
             [vol1n.clogel.client :as client]
@@ -72,25 +72,26 @@
       (assoc (clojure.core/get *clogel-param-bindings* edn)
              :value
              (str \< (remove-colon-kw (:type (get *clogel-param-bindings* edn))) \> edn))
-      (let [node-key (cond (clojure.core/and (map? edn) (:with edn)) :with
-                           (map? edn) (some #(when (clojure.core/not (contains? mod-keys %)) %)
-                                            (keys edn))
-                           (clojure.core/and (vector? edn)
-                                             (every? map? edn)
-                                             (every? #(assignment-operators (key (first %))) edn))
-                           :free-object
-                           (clojure.core/and (vector? edn) (keyword? (first edn)))
-                           (let [key (first edn)]
-                             (if (contains? node-registry key)
-                               key
-                               (if *clogel-dot-access-context*
-                                 :free-object
-                                 (throw (ex-info (str "invalid keyword" key)
-                                                 {:valid-keys (keys node-registry) :passed key})))))
-                           (keyword? edn) edn
-                           (symbol? edn) :dot-access
-                           (coll? edn) :collection
-                           :else :scalar)
+      (let [node-key
+            (sanitize-kw
+             (cond (clojure.core/and (map? edn) (:with edn)) :with
+                   (map? edn) (some #(when (clojure.core/not (contains? mod-keys %)) %) (keys edn))
+                   (clojure.core/and (vector? edn)
+                                     (every? map? edn)
+                                     (every? #(assignment-operators (key (first %))) edn))
+                   :free-object
+                   (clojure.core/and (vector? edn) (keyword? (first edn)))
+                   (let [key (first edn)]
+                     (if (contains? node-registry (sanitize-kw key))
+                       key
+                       (if *clogel-dot-access-context*
+                         :free-object
+                         (throw (ex-info (str "invalid keyword" key)
+                                         {:valid-keys (keys node-registry) :passed key})))))
+                   (keyword? edn) edn
+                   (symbol? edn) :dot-access
+                   (coll? edn) :collection
+                   :else :scalar))
             node (get node-registry node-key)]
         (if (clojure.core/not node)
           (throw (ex-info (str "invalid keyword" node-key)
@@ -111,7 +112,8 @@
                       (cond (clojure.core/= node-key :for)
                             (let [compiled-binding (clogel->edgeql (first children))]
                               (binding [*clogel-with-bindings* (assoc *clogel-with-bindings*
-                                                                      (first (:for edn))
+                                                                      (sanitize-symbol (first
+                                                                                        (:for edn)))
                                                                       compiled-binding)]
                                 [compiled-binding (clogel->edgeql (last children))]))
                             (clojure.core/= node-key :group)
@@ -120,7 +122,9 @@
                                   (reduce (fn [compiled [b c]]
                                             (let [result (clogel->edgeql c)]
                                               (binding [*clogel-with-bindings*
-                                                        (assoc *clogel-with-bindings* b result)]
+                                                        (assoc *clogel-with-bindings*
+                                                               (sanitize-symbol b)
+                                                               result)]
                                                 {:compiled      (conj (:compiled compiled) result)
                                                  :with-bindings *clogel-with-bindings*})))
                                           {:compiled [] :with-bindings *clogel-with-bindings*}
@@ -138,7 +142,9 @@
                                   (reduce (fn [compiled [b c]]
                                             (let [result (clogel->edgeql c)]
                                               (binding [*clogel-with-bindings*
-                                                        (assoc *clogel-with-bindings* b result)]
+                                                        (assoc *clogel-with-bindings*
+                                                               (sanitize-symbol b)
+                                                               result)]
                                                 {:compiled      (conj (:compiled compiled) result)
                                                  :with-bindings *clogel-with-bindings*})))
                                           {:compiled [] :with-bindings *clogel-with-bindings*}
@@ -265,6 +271,7 @@
         (let [args (vec (map first params))
               param-binding (into {} params)
               compiled (binding [*clogel-param-bindings* param-binding] (compile-query query))]
+          (println "compiled" compiled)
           `(defn ~(dequote name)
              ~args
              (try (client/query
@@ -287,7 +294,7 @@
 
 (comment
   (defquery 'auth-user
-            [['$email :str] ['$hashed :str]]
+            [['$email :str] ['$hashed-password :str]]
             (-> (top/select 42)
                 (top/filter (and (eq '$email "email") (eq '$hashed "email")))))
   (defquery 'test-query
@@ -297,7 +304,7 @@
 (defquery 'store-api-key!
           [['$hashed-key :str] ['$user-id :str]]
           (-> (top/with [['user
-                          (assert_single (-> (top/select {:user/User [:apiKeys]})
+                          (assert-single (-> (top/select {:user/User [:apiKeys]})
                                              (top/filter [:= '.id '$user-id])))]])
               (top/select (if_else '()
                                    (gte (count 'user.apiKeys) 5)

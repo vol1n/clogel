@@ -1,7 +1,7 @@
 (ns vol1n.clogel.object-types
   (:require [clojure.string :as str]
             [vol1n.clogel.util :refer
-             [gel-type->clogel-type ->Node ->Overload remove-colon-kw max-card
+             [gel-type->clogel-type ->Node ->Overload remove-colon-kw max-card sanitize-kw
               *clogel-dot-access-context* *clogel-with-bindings* *clogel-param-bindings*]]
             [vol1n.clogel.castable :refer [implicit-castable? validate-object-type-cast]]
             [vol1n.clogel.object-util :refer [object-registry raw-objects]]))
@@ -31,7 +31,7 @@
     {:type
      (cond
        (keyword? object)
-       (if (= object (keyword (:clogel-name object-type)))
+       (if (= object ((sanitize-kw keyword) (:clogel-name object-type)))
          {:card :many :type (:clogel-name object-type) :deletable true :updatable true}
          (throw (ex-info "We've got problems" {})))
        (and (map? object) (vector? (last (first object))))
@@ -39,7 +39,7 @@
          (let [vec (last (first object))
                type (if (= (key (first object)) :free-object)
                       :free-object
-                      (get object-registry (key (first object))))
+                      (get object-registry (sanitize-kw (key (first object)))))
                only-assignments
                (every? (fn [item] (and (map? item) (assignment-operators (key (first item))))) vec)
                only-existing-assignments
@@ -64,7 +64,8 @@
                                               first
                                               val
                                               first
-                                              key)
+                                              key
+                                              sanitize-kw)
                                 assign-value (-> item
                                                  first
                                                  val
@@ -102,11 +103,11 @@
                                          (throw (ex-info (str "Key " main-key " not found on type")
                                                          {})))
                                      (get item main-key)}))))
-                        (keyword? item) (if (contains? type item)
-                                          (assoc acc item (get type item))
-                                          (throw (ex-info (str "Key " item
-                                                               " does not exist on type" type)
-                                                          {:error/error true})))
+                        (keyword? item)
+                        (if (or (contains? type item) (contains? type (sanitize-kw item)))
+                          (assoc acc item (get type item))
+                          (throw (ex-info (str "Key " item " does not exist on type" type)
+                                          {:error/error true})))
                         :else (throw
                                (ex-info
                                 "Invalid type within projection vector expected map or keyword"
@@ -157,13 +158,21 @@
   [proj & compiled-children]
   (let [red (reduce
              (fn [acc item]
-               (cond (keyword? item) {:compiled  (str (:compiled acc) (remove-colon-kw item) ",\n")
+               (cond (keyword? item) {:compiled  (str (:compiled acc)
+                                                      (-> item
+                                                          sanitize-kw
+                                                          remove-colon-kw)
+                                                      ",\n")
                                       :remaining (:remaining acc)}
                      (and (map? item) (assignment-operators (key (first item))))
                      (let [op (key (first item))
                            op-string (if (= op :=) ":=" (remove-colon-kw op))]
                        {:compiled  (str (:compiled acc)
-                                        (remove-colon-kw (key (first (get item op))))
+                                        (-> (get item op)
+                                            first
+                                            key
+                                            sanitize-kw
+                                            remove-colon-kw)
                                         " "
                                         op-string
                                         " "
@@ -176,7 +185,9 @@
                            result (apply compile-projection
                                          (into [(get item main-key)] (:remaining acc)))]
                        {:compiled  (str (:compiled acc)
-                                        (remove-colon-kw main-key)
+                                        (-> main-key
+                                            sanitize-kw
+                                            remove-colon-kw)
                                         ": "
                                         \{
                                         "\n"

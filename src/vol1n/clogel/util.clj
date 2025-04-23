@@ -12,6 +12,28 @@
 
 (defn remove-colon-kw [kw] (str/join (rest (str kw))))
 
+(defn symbolic-keyword? [k] (when (keyword? k) (not (re-find #"[a-zA-Z0-9]" (name k)))))
+
+(defn sanitize-kw
+  [kw]
+  (if (#{:dot-access :free-object} kw)
+    kw
+    (if (symbolic-keyword? kw)
+      kw
+      (-> kw
+          (remove-colon-kw)
+          (str/split #"-")
+          (#(str/join "_" %))
+          (keyword)))))
+
+(defn sanitize-symbol
+  [sym]
+  (-> sym
+      (str)
+      (str/split #"-")
+      (#(str/join "_" %))
+      (symbol)))
+
 (declare parse-generic-type gel-type->clogel-type) ;; :)
 
 (defn max-card
