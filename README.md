@@ -117,14 +117,18 @@ This makes building queries dynamically from fragments super clean and simple, w
 The `defquery` macro is probably the best way to work with Clogel. It compiles your query into a parameterized EdgeQL query at macro expansion time, allowing for quick feedback loops to ensure the query is syntactically valid before runtime. It then exposes your query as a Clojure function!
 
 ``` clojure
- (defquery 'auth-user
-     [['$email :str] 
+ (defquery 'sign-up!
+     [['$email :str]
       ['$hashed :str]]
-     (-> (g/select :User)
-         (g/filter (g/and (g/eq '$email '.email)
-                          (g/eq '$hashed '.passwordHash)))))
+     (-> (g/insert :User [{:= {:email '$email}}
+                          {:= {:password '$hashed}}])
+         (g/unless-conflict '.email)))
                           
-(auth-user "colin@example.com" hashed-password)
+(let [new-user (sign-up! "colin@example.com" hashed-password)]
+    (if (empty? )
+        (println "Email already in use")
+        (println "Sign up successful! New User ID: "
+                 (-> new-user first :id)))) ; EdgeQL queries return a set, we treat as a Clojure seq
 ```
 
 > Sorry about the apostrophes. Custom clj-kondo linting is on my radar. 
