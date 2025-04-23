@@ -14,7 +14,8 @@
             [vol1n.clogel.top-level :as top]
             [vol1n.clogel.client :as client]
             [cheshire.core :as json]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [clojure.walk :refer [postwalk]])
   (:import [com.geldata.driver.exceptions GelErrorException])
   (:refer-clojure :exclude
                   [update for filter group-by min range find max assert count concat mod or not
@@ -169,17 +170,35 @@
                      (apply (:compile-fn overload)
                             (into [edn] (map :value compiled-children)))))))))))
 
+(defn hyphenate-keywords
+  [data]
+  (postwalk (fn [x]
+              (if (keyword? x)
+                (-> x
+                    name
+                    (str/replace "_" "-")
+                    keyword)
+                x))
+            data))
+
+(comment
+  (hyphenate-keywords {:hello_world {:foo_bar :baz_baz}}))
+
 (defn query
-  [q]
-  (if (some #(#{:select :group :delete :insert :for :with} (key %)) q)
-    (let [compiled (:value (clogel->edgeql q))]
-      (try (client/query (subs compiled 1 (dec (clojure.core/count compiled))))
-           (catch Throwable ge
-             (throw (ex-info "Exception in Gel query execution: "
-                             {:message (.getMessage ge)
-                              :cause   (.getCause ge)
-                              :stack   (map #(str "  at" %) (.getStackTrace ge))})))))
-    (throw (ex-info "Missing top-level statement in query" {:error/error true :error/query q}))))
+  ([q] (query q true))
+  ([q hyphenate?]
+   (if (some #(#{:select :group :delete :insert :for :with} (key %)) q)
+     (let [compiled (:value (clogel->edgeql q))]
+       (try (if hyphenate?
+              (hyphenate-keywords (client/query
+                                   (subs compiled 1 (dec (clojure.core/count compiled)))))
+              (client/query (subs compiled 1 (dec (clojure.core/count compiled)))))
+            (catch Throwable ge
+              (throw (ex-info "Exception in Gel query execution: "
+                              {:message (.getMessage ge)
+                               :cause   (.getCause ge)
+                               :stack   (map #(str "  at" %) (.getStackTrace ge))})))))
+     (throw (ex-info "Missing top-level statement in query" {:error/error true :error/query q})))))
 
 (defn compile-query
   [q]
@@ -247,7 +266,6 @@
   (clogel->edgeql (-> (top/insert {:user/User [{:= {:email "colin@example.com"}}
                                                {:= {:passwordHash "hashed"}}]})
                       (top/unless-conflict '.email)))
-  (query {:delete :User})
   (clogel->edgeql (-> (top/with [['x (select :user/User)]])
                       (top/select 'x.name)))
   (clogel->edgeql [{:= {:hello "world"}}])
@@ -260,10 +278,10 @@
 
 (defn dequote [form] (if (clojure.core/and (seq? form) (= 'quote (first form))) (second form) form))
 
-
 (defmacro defquery
-  [name params query]
-  (let [params (mapv (fn [[name type]] [(dequote name) {:type type :card :singleton}]) params)
+  [& defquery-args]
+  (let [[name params query hyphenate?] defquery-args
+        params (mapv (fn [[name type]] [(dequote name) {:type type :card :singleton}]) params)
         query (eval query)]
     (if (every? #(clojure.core/and (symbol? (first %)) (str/starts-with? (str (first %)) "$"))
                 params)
@@ -274,9 +292,11 @@
           (println "compiled" compiled)
           `(defn ~(dequote name)
              ~args
-             (try (client/query
-                   ~compiled
-                   ~(into {} (map (fn [[p a]] [(str (first p)) a]) (map vector params args))))
+             (try (cond-> (client/query ~compiled
+                                        ~(into {}
+                                               (map (fn [[p a]] [(str (first p)) a])
+                                                    (map vector params args))))
+                    ~hyphenate? hyphenate-keywords)
                   (catch Throwable e#
                     (throw (ex-info "Exception in Gel query execution: "
                                     {:message (.getMessage e#)
@@ -299,20 +319,19 @@
                 (top/filter (and (eq '$email "email") (eq '$hashed "email")))))
   (defquery 'test-query
             [['$test :int64] ['$test2 :int64]]
-            (-> (top/select ['$test '$test2]))))
-
-(defquery 'store-api-key!
-          [['$hashed-key :str] ['$user-id :str]]
-          (-> (top/with [['user
-                          (assert-single (-> (top/select {:user/User [:apiKeys]})
-                                             (top/filter [:= '.id '$user-id])))]])
-              (top/select (if_else '()
-                                   (gte (count 'user.apiKeys) 5)
-                                   (-> (top/update :user/User)
-                                       (top/set [{:+= {:apiKeys (top/insert
-                                                                 {:user/ApiKey
-                                                                  [{:= {:key '$hashed-key}}
-                                                                   {:= {:user 'user}}]})}}]))))))
+            (-> (top/select ['$test '$test2])))
+  (defquery 'store-api-key!
+            [['$hashed-key :str] ['$user-id :str]]
+            (-> (top/with [['user
+                            (assert-single (-> (top/select {:user/User [:api-keys]})
+                                               (top/filter [:= '.id '$user-id])))]])
+                (top/select (if_else '()
+                                     (gte (count 'user.api-keys) 5)
+                                     (-> (top/update :user/User)
+                                         (top/set [{:+= {:apiKeys (top/insert
+                                                                   {:user/ApiKey
+                                                                    [{:= {:key '$hashed-key}}
+                                                                     {:= {:user 'user}}]})}}])))))))
 
 (comment
   (query "select 42")

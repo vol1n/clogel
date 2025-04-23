@@ -292,7 +292,7 @@
 (defn validate-dot-access
   [sym]
   (if (symbol? sym)
-    (let [as-str (str sym)
+    (let [as-str (str/replace (str sym) #"-" "_")
           access-path
           (if (= (first as-str) \.)
             (if *clogel-dot-access-context*
