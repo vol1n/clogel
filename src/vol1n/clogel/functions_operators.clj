@@ -129,7 +129,6 @@
                 (if (:error/error new) new (update-annotations variadic-param old new)))))
           positional-validator)]
     (fn [call] ;; call => [:fn pos-arg1 pos-arg2 ... { named only args }]
-      (println "call" call)
       (let [{assignment-args true positional-args false}
             (group-by #(and (map? %) (= (key (first %)) :=)) (rest call))
             deref-if-needed #(if (instance? clojure.lang.IDeref %) @% %)

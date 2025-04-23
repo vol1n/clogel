@@ -28,6 +28,7 @@
 (defn build-object-validator
   [object-type]
   (fn validator [object]
+    (println "validator" object)
     {:type
      (cond
        (keyword? object)
@@ -113,10 +114,6 @@
                                 {}))))
                     {}
                     vec)]
-               (println "only=" only=)
-               (println (:clogel-name object-type))
-               (println "redu" reduced)
-               (println (validate-object-type-cast (:clogel-name object-type) reduced))
                (assoc (cond-> reduced
                         only-existing-assignments (assoc :settable true)
                         (and only=
@@ -136,7 +133,11 @@
                         :free-object)
         validator (if (= object-type :free-object)
                     (build-object-validator nil)
-                    (build-object-validator object-type))]
+                    (build-object-validator
+                     (let [parsed (mapv #(-> %
+                                             (assoc :clogel-name (gel-type->clogel-type (:name %))))
+                                        raw-objects)]
+                       (some #(when (= (:clogel-name %) object-type) %) parsed))))]
     (validator {object-type object})))
 
 (defn compile-modifier [k child] (str (remove-colon-kw k) " " child))

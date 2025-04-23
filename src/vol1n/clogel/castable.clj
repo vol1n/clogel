@@ -76,8 +76,6 @@ select schema::Cast {
 
 (def ancestry-map (objects->ancestors-map (parse-objects raw-objects)))
 
-(println "ancestry-map" ancestry-map)
-
 (comment
   (let [g {:a #{:b :c} :b #{:c} :c #{:a}}] (path-exists? g :b :a))
   (let [g {:a #{:b :c} :b #{:c} :c #{:a}}] (path-exists? g :a :d)))
@@ -114,8 +112,6 @@ select schema::Cast {
       result)))
 
 (comment
-  (println "casts-map" casts-map)
-  (println implicit-casts-map)
   (implicit-castable? :int32 :int64))
 
 (defn card-gte?
@@ -126,10 +122,6 @@ select schema::Cast {
     :optional (#{:empty :singleton :optional} r)
     :many true))
 
-(defn is-object-parent
-  [from to]
-  ;; true is there is a path from 'from' to 'to'
-  ())
 
 (defn validate-object-type-cast
   [object-type cast-type]
@@ -180,4 +172,4 @@ Did you try and use a scalar as an object?"
              :error/message (str "Not every required field is there for " object-type
                                  " Required: " (vec required-fields)
                                  " Received " fields)}
-            (do (println "CASTABLE") true)))))))
+            true))))))
