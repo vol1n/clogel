@@ -65,15 +65,20 @@
 
 (def mod-keys #{:limit :order-by :filter :offset :set :by :union})
 
+(defn dehyphenate-symbol [symbol] (symbol (str/replace "-" "_" (str symbol))))
+
+
 (defn clogel->edgeql
   [edn]
-  (println "EDN" edn)
   (if (clojure.core/and (symbol? edn) (contains? *clogel-with-bindings* edn))
     (assoc (get *clogel-with-bindings* edn) :value (str edn))
     (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))
       (assoc (clojure.core/get *clogel-param-bindings* edn)
              :value
-             (str \< (remove-colon-kw (:type (get *clogel-param-bindings* edn))) \> edn))
+             (str \<
+                  (remove-colon-kw (:type (get *clogel-param-bindings* edn)))
+                  \>
+                  (dehyphenate-symbol edn)))
       (let [node-key
             (sanitize-kw
              (cond (clojure.core/and (map? edn) (:with edn)) :with
