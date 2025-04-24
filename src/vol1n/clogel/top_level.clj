@@ -207,7 +207,8 @@
                    :remaining (rest children)})
                 {:str "" :remaining (butlast children)}
                 bindings))
-         (subs (last children) 1 (dec (count (last children)))))))
+         (subs (last children) 1 (dec (count (last children))))
+         \))))
 
 (defn compile-for
   [for-statement & children]
