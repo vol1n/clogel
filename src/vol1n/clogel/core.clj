@@ -65,8 +65,7 @@
 
 (def mod-keys #{:limit :order-by :filter :offset :set :by :union})
 
-(defn dehyphenate-symbol [symbol] (symbol (str/replace "-" "_" (str symbol))))
-
+(defn dehyphenate-symbol [sym] (symbol (str/replace (str sym) "-" "_")))
 
 (defn clogel->edgeql
   [edn]
@@ -346,8 +345,6 @@
                                            :last-used
                                            :id]})
                 (top/filter (eq '.user.id (cast-uuid '$user-id))))))
-
-
 
 
 (comment

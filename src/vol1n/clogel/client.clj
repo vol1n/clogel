@@ -6,17 +6,17 @@
 
 (def client-pool (atom (GelClientPool.)))
 
-
+(defn dehyphenate-symbol [sym] (symbol (str/replace (str sym) "-" "_")))
 
 (defn java-map
   [m]
   (let [hm (HashMap.)]
-    (doseq [[k v] m] (.put hm (str/join (rest (str k))) v))
+    (doseq [[k v] m] (.put hm (str/join (str (dehyphenate-symbol k))) v))
     hm))
 
 (comment
   (java-map {})
-  (java-map {:key1 "val1"}))
+  (java-map {"key-1" "val1"}))
 
 (defn query
   ([query-str] (query query-str {}))
