@@ -67,6 +67,7 @@
 
 (defn clogel->edgeql
   [edn]
+  (println "EDN" edn)
   (if (clojure.core/and (symbol? edn) (contains? *clogel-with-bindings* edn))
     (assoc (get *clogel-with-bindings* edn) :value (str edn))
     (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))
@@ -333,7 +334,14 @@
                                              (top/insert {:user/ApiKey [{:= {:key '$hashed-key}}
                                                                         {:= {:user 'user}}]})]])
                                  (top/select (-> (top/update :user/User)
-                                                 (top/set [{:+= {:api-keys 'new-key}}])))))))))
+                                                 (top/set [{:+= {:api-keys 'new-key}}]))))))))
+  (defquery 'get-keys
+            [['$user-id :str]]
+            (-> (top/select {:user/ApiKey [:created-at
+                                           :last-used
+                                           :id]})
+                (top/filter (eq '.user.id (cast-uuid '$user-id))))))
+
 
 
 

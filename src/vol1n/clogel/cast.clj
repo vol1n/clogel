@@ -29,8 +29,8 @@
   (let [no-ns #(symbol (str %))
         grouped (group-by :to-type parsed-casts)
         reg (into {}
-                  (map (fn [[to-type casts]] [(keyword (str "cast-" (remove-colon-kw to-type)))
-                                              (->Node (keyword (str "cast-"
+                  (map (fn [[to-type casts]] [(keyword (str "cast_" (remove-colon-kw to-type)))
+                                              (->Node (keyword (str "cast_"
                                                                     (remove-colon-kw to-type)))
                                                       cast-children-generator
                                                       cast-type-form
