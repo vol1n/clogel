@@ -41,7 +41,7 @@
                                          {:project {:fn (fn [_] true)}}
                                          modifier-validators))]
         (if failure
-          (do (println "failure" failure) failure)
+          (do failure)
           {:type (:type select)
            :card (if (and (= limit 1) (not= :singleton (:card select)))
                    :optional
@@ -103,7 +103,7 @@
                   (throw (ex-info "Malformed with statement"
                                   {:error/error true :error/message (str "Malformed binding " %)})))
                bindings)]
-    (if (not error) rest nil)))
+    rest))
 
 (defn for-validator
   [for-statement]

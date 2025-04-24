@@ -79,8 +79,6 @@
                                                  first
                                                  val)
                                 attribute-type (get type assign-to)]
-                            (println "assign to" assign-to)
-                            (println)
                             (if (nil? attribute-type)
                               (throw (ex-info (str "Cannot use assignment operator (other than :=)"
                                                    "on non-existent field "
@@ -123,15 +121,18 @@
                                 {}))))
                     {}
                     vec)]
-               (assoc (cond-> reduced
-                        only-existing-assignments (assoc :settable true)
-                        (and only=
-                             (:clogel-name object-type)
-                             (not (:error/error
-                                   (validate-object-type-cast (:clogel-name object-type) reduced))))
-                        (assoc :insertable true))
-                      :object-type
-                      (or (:clogel-name object-type) :free-object)))))))
+               (let [fin (assoc (cond-> reduced
+                                  only-existing-assignments (assoc :settable true)
+                                  (and only=
+                                       (:clogel-name object-type)
+                                       (not (:error/error (validate-object-type-cast
+                                                           reduced
+                                                           (or (:clogel-name object-type)
+                                                               object-type)))))
+                                  (assoc :insertable true))
+                                :object-type
+                                (or (:clogel-name object-type) :free-object))]
+                 fin))))))
      :card :many}))
 
 (defn validate-free-object
@@ -146,8 +147,9 @@
                      (let [parsed (mapv #(-> %
                                              (assoc :clogel-name (gel-type->clogel-type (:name %))))
                                         raw-objects)]
-                       (some #(when (= (:clogel-name %) object-type) %) parsed))))]
-    (validator {object-type object})))
+                       (some #(when (= (:clogel-name %) object-type) %) parsed))))
+        val-result (validator {object-type object})]
+    val-result))
 
 (defn compile-modifier [k child] (str (remove-colon-kw k) " " child))
 
@@ -302,7 +304,6 @@
   [sym]
   (if (symbol? sym)
     (let [as-str (str/replace (str sym) #"-" "_")
-          _ (println "tapping" as-str)
           access-path
           (if (= (first as-str) \.)
             (if *clogel-dot-access-context*

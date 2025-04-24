@@ -125,51 +125,59 @@ select schema::Cast {
 
 (defn validate-object-type-cast
   [object-type cast-type]
-  (let [object-type-map (get object-registry object-type)]
-    (cond
-      (nil? object-type-map) {:error/error   true
-                              :error/message (str "Object type " object-type " not in registry. ")}
-      (keyword? cast-type)
-      (if (contains? object-registry cast-type)
-        (recur object-type (get object-registry cast-type))
-        {:error/error true
-         :error/message
-         (str
-          "Type"
-          cast-type
-          "not an object type so not castable to object-type.
+  (cond
+    (keyword? cast-type)
+    (if (contains? object-registry cast-type)
+      (recur object-type (get object-registry cast-type))
+      {:error/error true
+       :error/message
+       (str
+        "Type"
+        cast-type
+        "not an object type so not castable to object-type.
 Did you try and use a scalar as an object?"
-          object-type)})
-      :else
-      (let [required-fields
-            (keep (fn [[k v]]
-                    (when (and (not (:default v)) (:required v) (not (#{:id :__type__} k))) k))
-                  object-type-map)
-            fields (reduce (fn [acc [k v]]
-                             (let [type-def (get object-type-map k)]
-                               (if type-def
-                                 (if (and (implicit-castable? (:type v) (:type (get cast-type k)))
-                                          (card-gte? (:card v) (:card type-def)))
-                                   (conj acc k)
-                                   (reduced {:error/error   true
-                                             :error/message (str
-                                                             "Key with cardinality "
-                                                             (:card v)
-                                                             " and type "
-                                                             (:type v)
-                                                             "does not cast onto object field with "
-                                                             "type "
-                                                             (:type type-def)
-                                                             {:card (:card type-def)
-                                                              :type (:type type-def)})}))
-                                 (conj acc k))))
-                           []
-                           cast-type)]
-        (if (:error/error fields)
-          fields
-          (if (not (set/superset? (set fields) (set required-fields)))
-            {:error/error   true
-             :error/message (str "Not every required field is there for " object-type
-                                 " Required: " (vec required-fields)
-                                 " Received " fields)}
-            true))))))
+        object-type)})
+    (keyword? object-type)
+    (if (contains? object-registry object-type)
+      (recur (get object-registry object-type) cast-type)
+      {:error/error true
+       :error/message
+       (str
+        "Type"
+        object-type
+        "not an object type so not castable to object-type.
+Did you try and use a scalar as an object?"
+        object-type)})
+    :else (let [required-fields
+                (keep (fn [[k v]]
+                        (when (and (not (:default v)) (:required v) (not (#{:id :__type__} k))) k))
+                      object-type)
+                fields (reduce (fn [acc [k v]]
+                                 (let [type-def (get object-type k)]
+                                   (if type-def
+                                     (if (and (implicit-castable? (:type v)
+                                                                  (:type (get cast-type k)))
+                                              (card-gte? (:card v) (:card type-def)))
+                                       (conj acc k)
+                                       (reduced {:error/error true
+                                                 :error/message
+                                                 (str "Key with cardinality "
+                                                      (:card v)
+                                                      " and type "
+                                                      (:type v)
+                                                      "does not cast onto object field with "
+                                                      "type "
+                                                      (:type type-def)
+                                                      {:card (:card type-def)
+                                                       :type (:type type-def)})}))
+                                     (conj acc k))))
+                               []
+                               cast-type)]
+            (if (:error/error fields)
+              fields
+              (if (not (set/superset? (set fields) (set required-fields)))
+                {:error/error   true
+                 :error/message (str "Not every required field is there for " object-type
+                                     " Required: " (vec required-fields)
+                                     " Received " fields)}
+                true)))))

@@ -325,14 +325,14 @@
             (-> (top/with [['user
                             (assert-single (-> (top/select {:user/User [:api-keys]})
                                                (top/filter [:= '.id '$user-id])))]])
-                (top/select (if_else '()
-                                     (gte (count 'user.api-keys) 5)
-                                     (-> (top/update :user/User)
-                                         (top/set [{:+= {:api-keys (top/insert
-                                                                    {:user/ApiKey
-                                                                     [{:= {:key '$hashed-key}}
-                                                                      {:= {:user
-                                                                           'user}}]})}}])))))))
+                (top/select (if_else
+                             '()
+                             (gte (count 'user.api-keys) 5)
+                             (-> (top/with [['new-key
+                                             (top/insert {:user/ApiKey [{:= {:key '$hashed-key}}
+                                                                        {:= {:user 'user}}]})]])
+                                 (top/select (-> (top/update :user/User)
+                                                 (top/set [{:+= {:api-keys 'new-key}}])))))))))
 
 
 
