@@ -49,7 +49,6 @@
 
 (defn insert-validator
   [insert-statement]
-  (println "ins" insert-statement)
   (let [insert (:insert insert-statement)
         limit (:limit insert-statement)]
     (if (not insert)

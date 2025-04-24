@@ -328,10 +328,13 @@
                 (top/select (if_else '()
                                      (gte (count 'user.api-keys) 5)
                                      (-> (top/update :user/User)
-                                         (top/set [{:+= {:apiKeys (top/insert
-                                                                   {:user/ApiKey
-                                                                    [{:= {:key '$hashed-key}}
-                                                                     {:= {:user 'user}}]})}}])))))))
+                                         (top/set [{:+= {:api-keys (top/insert
+                                                                    {:user/ApiKey
+                                                                     [{:= {:key '$hashed-key}}
+                                                                      {:= {:user
+                                                                           'user}}]})}}])))))))
+
+
 
 (comment
   (query "select 42")

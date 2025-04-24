@@ -31,9 +31,9 @@
     {:type
      (cond
        (keyword? object)
-       (if (= object ((sanitize-kw keyword) (:clogel-name object-type)))
+       (if (= (sanitize-kw object) (:clogel-name object-type))
          {:card :many :type (:clogel-name object-type) :deletable true :updatable true}
-         (throw (ex-info "We've got problems" {})))
+         (throw (ex-info "We've got problems BOV" {})))
        (and (map? object) (vector? (last (first object))))
        (do
          (let [vec (last (first object))
@@ -42,9 +42,16 @@
                       (get object-registry (sanitize-kw (key (first object)))))
                only-assignments
                (every? (fn [item] (and (map? item) (assignment-operators (key (first item))))) vec)
-               only-existing-assignments
-               (and only-assignments
-                    (every? (fn [item] (get type (key (first (val (first item)))))) vec))
+               only-existing-assignments (and only-assignments
+                                              (every? (fn [item]
+                                                        (get type
+                                                             (-> item
+                                                                 first
+                                                                 val
+                                                                 first
+                                                                 key
+                                                                 sanitize-kw)))
+                                                      vec))
                only= (and only-assignments (every? (fn [item] (#{:=} (key (first item)))) vec))]
            (if (not type)
              (throw (ex-info (str "Cannot project non-object type "
@@ -58,7 +65,7 @@
                         ;; assignment
                         (if (= (key (first item)) :=)
                           (assoc acc
-                                 (key (first (val (first item))))
+                                 (sanitize-kw (key (first (val (first item)))))
                                  (val (first (val (first item)))))
                           (let [assign-to (-> item
                                               first
@@ -72,6 +79,8 @@
                                                  first
                                                  val)
                                 attribute-type (get type assign-to)]
+                            (println "assign to" assign-to)
+                            (println)
                             (if (nil? attribute-type)
                               (throw (ex-info (str "Cannot use assignment operator (other than :=)"
                                                    "on non-existent field "
@@ -293,6 +302,7 @@
   [sym]
   (if (symbol? sym)
     (let [as-str (str/replace (str sym) #"-" "_")
+          _ (println "tapping" as-str)
           access-path
           (if (= (first as-str) \.)
             (if *clogel-dot-access-context*
