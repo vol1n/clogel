@@ -332,7 +332,7 @@
                              :many)}))
     (throw (ex-info "Not a symbol somehow" {}))))
 
-(defn compile-dot-access [sym] (str sym))
+(defn compile-dot-access [sym] (str/replace (str sym) #"-" "_"))
 
 (def dot-access
   {:dot-access (->Node :dot-access
