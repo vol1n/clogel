@@ -274,7 +274,8 @@
   (clogel->edgeql {:update :user/User :set [{:= {:email "hello@world.com"}}]})
   (clogel->edgeql {:update :user/User :set [{:+= {:apiKeys {:select :user/ApiKey}}}]})
   (println (clogel->edgeql {:select  {:update :user/User :set [{:= {:name "Chudley"}}]}
-                            :project [:name :id]})))
+                            :project [:name :id]}))
+  (if-else '() true '()))
 
 (defn dequote [form] (if (clojure.core/and (seq? form) (= 'quote (first form))) (second form) form))
 

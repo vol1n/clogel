@@ -41,7 +41,7 @@
                                          {:project {:fn (fn [_] true)}}
                                          modifier-validators))]
         (if failure
-          (do failure)
+          failure
           {:type (:type select)
            :card (if (and (= limit 1) (not= :singleton (:card select)))
                    :optional

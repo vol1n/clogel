@@ -1,11 +1,11 @@
 (ns vol1n.clogel.functions-operators
-  (:require [vol1n.clogel.types :refer
-             [lub gel-abstract-types is-abstract-type? child-of-abstract-type?]]
-            [vol1n.clogel.cardinality :refer [gel-typemod->clogel-cardinalities]]
-            [vol1n.clogel.castable :refer [implicit-castable?]]
-            [clojure.string :as str]
-            [vol1n.clogel.util :refer [gel-type->clogel-type ->Overload ->Node max-card]]
-            [vol1n.clogel.client :refer [query]]))
+  (:require
+    [vol1n.clogel.types :refer [lub gel-abstract-types is-abstract-type? child-of-abstract-type?]]
+    [vol1n.clogel.cardinality :refer [gel-typemod->clogel-cardinalities]]
+    [vol1n.clogel.castable :refer [implicit-castable?]]
+    [clojure.string :as str]
+    [vol1n.clogel.util :refer [gel-type->clogel-type ->Overload ->Node max-card remove-colon-kw]]
+    [vol1n.clogel.client :refer [query]]))
 
 
 (defn edgename->keyword
@@ -235,6 +235,13 @@
                                                {}
                                                grouped-by-alias)]
                            (merge aliases gfr))
+        hyphenate #(str/replace % "_" "-")
+        gfr-with-hyphenated (reduce (fn [acc [k v]]
+                                      (if (str/includes? (str k) "_")
+                                        (assoc acc (keyword (hyphenate (remove-colon-kw k))) v)
+                                        acc))
+                                    gfr-with-aliases
+                                    gfr-with-aliases)
         funcs (map (fn [[fname _]]
                      (let [kw (edgename->keyword fname)
                            replaced (if (= kw :=) :equals kw)
@@ -246,7 +253,6 @@
                                           (str (name replaced))))
                             (fn ~args-vec (into [~replaced] ~(symbol "args")))))))
                    grouped)
-        hyphenate #(str/replace % "_" "-")
         hyphenated-funcs (map (fn [[fname _]]
                                 (let [kw (edgename->keyword fname)
                                       replaced (if (= kw :=) :equals kw)
@@ -272,9 +278,22 @@
                       (conj acc `(def ~sym (fn ~args-vec (into [~kw] ~(symbol "args"))))))))
                 []
                 grouped-by-alias)
+        hyphenated-alias-funcs
+        (reduce (fn [acc [alias _]]
+                  (if (nil? alias)
+                    acc
+                    (let [kw alias
+                          sym (symbol (hyphenate (str/lower-case
+                                                  (if (namespace kw)
+                                                    (str/join "::" [(namespace kw) (name kw)])
+                                                    (str (name kw))))))
+                          args-vec ['& 'args]]
+                      (conj acc `(def ~sym (fn ~args-vec (into [~kw] ~(symbol "args"))))))))
+                []
+                grouped-by-alias)
         sym (symbol registry-name)
-        def-registry `(def ~sym ~gfr-with-aliases)]
-    `(do ~def-registry ~@alias-funcs ~@funcs ~@hyphenated-funcs))) ;;   ~@funcs
+        def-registry `(def ~sym ~gfr-with-hyphenated)]
+    `(do ~def-registry ~@alias-funcs ~@funcs ~@hyphenated-funcs ~@hyphenated-alias-funcs))) ;;   ~@funcs
 
 
 (defn get-fns
