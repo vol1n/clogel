@@ -1,6 +1,6 @@
 (ns vol1n.clogel.top-level
   (:require [vol1n.clogel.castable :refer [implicit-castable?]]
-            [vol1n.clogel.util :refer [->Node ->Overload remove-colon-kw]])
+            [vol1n.clogel.util :refer [->Node ->Overload remove-colon-kw sanitize-symbol]])
   (:refer-clojure :exclude [update for filter set]))
 
 (defn validate-map
@@ -194,17 +194,19 @@
          "\n" \))))
 
 
+
 (defn compile-with
   [with-statement & children]
   (let [bindings (:with with-statement)]
     (str \(
          "\n"
          "with "
-         (:str (reduce (fn [acc [sym _]]
-                         {:str       (str (:str acc) sym " := " (first (:remaining acc)) ",\n")
-                          :remaining (rest children)})
-                       {:str "" :remaining (butlast children)}
-                       bindings))
+         (:str (reduce
+                (fn [acc [sym _]]
+                  {:str (str (:str acc) (sanitize-symbol sym) " := " (first (:remaining acc)) ",\n")
+                   :remaining (rest children)})
+                {:str "" :remaining (butlast children)}
+                bindings))
          (subs (last children) 1 (dec (count (last children)))))))
 
 (defn compile-for
@@ -212,7 +214,7 @@
   (str \(
        "\n"
        "for "
-       (first (:for for-statement))
+       (sanitize-symbol (first (:for for-statement)))
        " in "
        (first children)
        "\nunion "
@@ -224,7 +226,7 @@
   (let [bindings (:using group-by-statement)
         {remaining :remaining compiled-using :str}
         (reduce (fn [acc [sym _]]
-                  {:str       (str (:str acc) sym " := " (first (:remaining acc)) ",\n")
+                  {:str (str (:str acc) (sanitize-symbol sym) " := " (first (:remaining acc)) ",\n")
                    :remaining (rest children)})
                 {:str "" :remaining (rest children)}
                 bindings)]
