@@ -218,6 +218,7 @@
   (clogel->edgeql [:cast-int32 5])
   (clogel->edgeql [1 2 3])
   (clogel->edgeql #{1 2 3})
+  (clogel->edgeql (cast "user::User" '()))
   (clogel->edgeql :User)
   (clogel->edgeql {:User [:name]})
   (clogel->edgeql {:User [{:best_friend [:name]} {:= {:myAssignment 42}}]})

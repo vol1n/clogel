@@ -12,7 +12,6 @@
   [m]
   (let [hm (HashMap.)]
     (doseq [[k v] m] (.put hm (str/join (rest (str (dehyphenate-symbol k)))) v))
-    (println "hm" hm)
     hm))
 
 (comment
