@@ -7,7 +7,7 @@ Clojure-native DSL and compiler for EdgeQL
 ``` clojure
 ;; deps.edn
 {:deps {vol1n/clogel {:git/url "https://github.com/vol1n/clogel.git"
-                      :git/sha "c17fd4ac92997f628cdab5a54830698ee21e12f2"}}}
+                      :git/sha "1341db583021b086c11a7f5a392ffc1da8c524a4"}}}
 ```
 
 ## ✨ Why?
