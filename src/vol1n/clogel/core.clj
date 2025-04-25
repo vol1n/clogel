@@ -2,6 +2,7 @@
   (:require [malli.core :as m]
             [vol1n.clogel.scalar :refer [clogel-scalars]]
             [vol1n.clogel.cast :refer [defgelcasts]]
+            [vol1n.clogel.cast :as casts]
             [vol1n.clogel.collection :refer [clogel-collections]]
             [vol1n.clogel.functions-operators :refer [defgelfuncs defgeloperators gel-index]]
             [vol1n.clogel.functions-operators :as func]
@@ -19,7 +20,7 @@
   (:import [com.geldata.driver.exceptions GelErrorException])
   (:refer-clojure :exclude
                   [update for filter group-by min range find max assert count concat mod or not
-                   distinct destructure and <= / > < + >= - * set]))
+                   distinct destructure and <= / > < + >= - * set cast]))
 ; select filter offset group-by limit update insert
               ;delete
 (def select top/select)
@@ -36,6 +37,7 @@
 (def with top/with)
 (def access func/access)
 (def unless-conflict top/unless-conflict)
+(def cast casts/cast)
 
 (defn match-overload
   [call overloads]

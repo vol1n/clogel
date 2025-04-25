@@ -1,7 +1,8 @@
 (ns vol1n.clogel.cast
   (:require [vol1n.clogel.util :refer [->Overload remove-colon-kw ->Node gel-type->clogel-type]]
             [clojure.string :as str]
-            [vol1n.clogel.castable :refer [castable? implicit-castable? casts parsed-casts]]))
+            [vol1n.clogel.castable :refer [castable? implicit-castable? casts parsed-casts]])
+  (:refer-clojure :exclude [cast]))
 
 
 (defn build-cast-validator
@@ -24,17 +25,20 @@
 
 (def cast-type-form (fn [cast types] [(first cast) (first types)]))
 
+(defn cast-op-keyword [typename] (keyword (str "cast-" (str/replace typename #"::" "__"))))
+
 (defmacro defgelcasts
   []
   (let [no-ns #(symbol (str %))
         grouped (group-by :to-type parsed-casts)
         reg (into {}
-                  (map (fn [[to-type casts]] [(keyword (str "cast_" (remove-colon-kw to-type)))
-                                              (->Node (keyword (str "cast_"
-                                                                    (remove-colon-kw to-type)))
-                                                      cast-children-generator
-                                                      cast-type-form
-                                                      (vec (map build-cast-overload-form casts)))])
+                  (map (fn [[to-type casts]]
+                         [(keyword (str "cast_" (remove-colon-kw (cast-op-keyword to-type))))
+                          (->Node (keyword (str "cast_"
+                                                (remove-colon-kw (cast-op-keyword to-type))))
+                                  cast-children-generator
+                                  cast-type-form
+                                  (vec (map build-cast-overload-form casts)))])
                        grouped))
         funcs (map (fn [[to-type _]]
                      (let [kw (if (map? to-type)
@@ -49,14 +53,13 @@
                                               (str (name kw)))))
                            arg-vec ['to-cast]]
                        `(def ~sym
-                          (fn ~arg-vec
-                            (println ~(symbol "to-cast"))
-                            [~(keyword (str "cast-" (remove-colon-kw kw))) ~(symbol "to-cast")]))))
+                          (fn ~arg-vec [~(keyword (str "cast-" (remove-colon-kw kw)))
+                                        ~(symbol "to-cast")]))))
                    grouped)
         def-registry `(def ~(no-ns 'gelcast-registry) ~reg)]
     `(do ~def-registry ~@funcs)))
 
-
+(defn cast [to expr] [(cast-op-keyword (keyword to)) expr])
 
 
 (comment
