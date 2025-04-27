@@ -74,3 +74,6 @@
                  (str/replace-first #"::" "/")
                  keyword)]
       (if (or (= (namespace kw) "std") (= (namespace kw) "default")) (keyword (name kw)) kw))))
+
+(comment
+  (gel-type->clogel-type "tuple<str, str>"))

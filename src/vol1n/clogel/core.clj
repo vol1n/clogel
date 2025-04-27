@@ -4,6 +4,7 @@
             [vol1n.clogel.cast :refer [defgelcasts]]
             [vol1n.clogel.cast :as casts]
             [vol1n.clogel.collection :refer [clogel-collections]]
+            [vol1n.clogel.collection :as colls]
             [vol1n.clogel.functions-operators :refer [defgelfuncs defgeloperators gel-index]]
             [vol1n.clogel.functions-operators :as func]
             [vol1n.clogel.object-types :refer
@@ -28,6 +29,7 @@
 (def filter top/filter)
 (def offset top/offset)
 (def group-by top/group-by)
+(def order-by top/order-by)
 (def limit top/limit)
 (def update top/update)
 (def insert top/insert)
@@ -38,6 +40,7 @@
 (def access func/access)
 (def unless-conflict top/unless-conflict)
 (def cast casts/cast)
+(def tuple colls/tuple)
 
 (defn match-overload
   [call overloads]

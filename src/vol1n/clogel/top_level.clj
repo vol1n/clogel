@@ -353,3 +353,5 @@
 (defn for ([binding union] {:for binding :union union}))
 
 (defn with ([bindings] (with {} bindings)) ([statement bindings] (assoc statement :with bindings)))
+
+(defn order-by ([val] (order-by {} val)) ([statement amount] (assoc statement :order-by val)))
