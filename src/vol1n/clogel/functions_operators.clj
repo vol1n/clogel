@@ -154,7 +154,7 @@
                 {:type (:return-type f)
                  :card (max-card [(:card arg-result) (:card assignment-result)])}))))))))
 
-(defn chop-last [s n] (let [chars (count s)] (subs s 0 (- chars n))))
+(defn chop-last [s n] (let [chars (count s)] (if (<= chars n) "" (subs s 0 (- chars n)))))
 
 (defn chop-prefix [s prefix] (if (clojure.string/starts-with? s prefix) (subs s (count prefix)) s))
 

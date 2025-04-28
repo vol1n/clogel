@@ -298,22 +298,26 @@
     (if (every? #(clojure.core/and (symbol? (first %)) (str/starts-with? (str (first %)) "$"))
                 params)
       (if (every? #(keyword? (:type (last %))) params)
-        (let [args (vec (map first params))
-              param-binding (into {} params)
-              compiled (binding [*clogel-param-bindings* param-binding] (compile-query query))]
-          (println "compiled" compiled)
-          `(defn ~(dequote name)
-             ~args
-             (try (cond-> (client/query ~compiled
-                                        ~(into {}
-                                               (map (fn [[p a]] [(str (first p)) a])
-                                                    (map vector params args))))
-                    ~hyphenate? hyphenate-keywords)
-                  (catch Throwable e#
-                    (throw (ex-info "Exception in Gel query execution: "
-                                    {:message (.getMessage e#)
-                                     :cause   (.getCause e#)
-                                     :stack   (map #(str "  at" %) (.getStackTrace e#))}))))))
+        (try (let [args (vec (map first params))
+                   param-binding (into {} params)
+                   compiled (binding [*clogel-param-bindings* param-binding] (compile-query query))]
+               (println "compiled" compiled)
+               `(defn ~(dequote name)
+                  ~args
+                  (try (cond-> (client/query ~compiled
+                                             ~(into {}
+                                                    (map (fn [[p a]] [(str (first p)) a])
+                                                         (map vector params args))))
+                         ~hyphenate? hyphenate-keywords)
+                       (catch Throwable e#
+                         (throw (ex-info "Exception in Gel query execution: "
+                                         {:message (.getMessage e#)
+                                          :cause   (.getCause e#)
+                                          :stack   (map #(str "  at" %) (.getStackTrace e#))}))))))
+             (catch Exception e
+               (println "Error during query compilation in defquery: " (.getMessage e)
+                        "\n" (reduce #(str %1 " at " %2 "\n") (.getStackTrace e)))
+               (throw e)))
         (throw (ex-info (str
                          "Every param binding for a defquery must have the form [$symbol :type],"
                          "bindings received: "

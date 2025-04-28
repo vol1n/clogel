@@ -296,7 +296,7 @@
                                 (get (:type resolved-type) (first p)))]
                    (if (:type type)
                      type
-                     (throw (ex-info (str "Type " t " does not have field " (first p))
+                     (throw (ex-info (str "Type " (:type t) " does not have field " (first p))
                                      {:error/error true})))))
           (throw (ex-info (str "Type " resolved-type " does not have field " (first path)) {})))))))
 
