@@ -126,9 +126,9 @@
                                   (and only=
                                        (:clogel-name object-type)
                                        (not (:error/error (validate-object-type-cast
-                                                           reduced
                                                            (or (:clogel-name object-type)
-                                                               object-type)))))
+                                                               object-type)
+                                                           reduced))))
                                   (assoc :insertable true))
                                 :object-type
                                 (or (:clogel-name object-type) :free-object))]

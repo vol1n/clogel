@@ -94,14 +94,14 @@ select schema::Cast {
 
 (defn implicit-castable?
   [from to]
-  (if (some map? [from to])
+  (if (and (some map? [from to])
+           (not (some #(contains? object-registry (:type %)) [from to]))
+           (not (some #(contains? object-registry %) [from to])))
     (if (not (every? map? [from to]))
       false
-      (if (and (= (key (first from)) (key (first to)))
-               (every? #(implicit-castable? (first %) (last %))
-                       (map vector (val (first from)) (val (first to)))))
-        true
-        false))
+      (and (= (key (first from)) (key (first to)))
+           (every? #(implicit-castable? (first %) (last %))
+                   (map vector (val (first from)) (val (first to))))))
     (let [from (or (:object-type from) from)
           to (or (:object-type to) to)
           result (if (= from to)
@@ -148,10 +148,13 @@ Did you try and use a scalar as an object?"
         "not an object type so not castable to object-type.
 Did you try and use a scalar as an object?"
         object-type)})
-    :else (let [required-fields
-                (keep (fn [[k v]]
-                        (when (and (not (:default v)) (:required v) (not (#{:id :__type__} k))) k))
-                      object-type)
+    :else (let [required-fields (keep (fn [[k v]]
+                                        (when (and (not (:default v))
+                                                   (not (:computed v))
+                                                   (:required v)
+                                                   (not (#{:id :__type__} k)))
+                                          k))
+                                      object-type)
                 fields (reduce (fn [acc [k v]]
                                  (let [type-def (get object-type k)]
                                    (if type-def
