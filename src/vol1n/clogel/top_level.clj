@@ -1,7 +1,7 @@
 (ns vol1n.clogel.top-level
   (:require [vol1n.clogel.castable :refer [implicit-castable?]]
             [vol1n.clogel.util :refer [->Node ->Overload remove-colon-kw sanitize-symbol]])
-  (:refer-clojure :exclude [update for filter set]))
+  (:refer-clojure :exclude [update for filter set group-by]))
 
 (defn validate-map
   [m validator-map]
@@ -68,6 +68,7 @@
 
 (defn update-validator
   [update-statement]
+  (println "update-statement" update-statement)
   (let [update (:update update-statement)]
     (if (not update)
       (throw (ex-info "should be unreachable" {}))
@@ -349,6 +350,8 @@
 (defn unless-conflict
   ([val] (unless-conflict {} val))
   ([statement val] (assoc statement :unless-conflict val)))
+
+(defn else ([val] (else {} val)) ([statement val] (assoc statement :else val)))
 
 (defn for ([binding union] {:for binding :union union}))
 

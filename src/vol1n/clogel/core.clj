@@ -41,6 +41,7 @@
 (def unless-conflict top/unless-conflict)
 (def cast casts/cast)
 (def tuple colls/tuple)
+(def else top/else)
 
 (defn match-overload
   [call overloads]
