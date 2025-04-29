@@ -132,7 +132,11 @@
       (let [{assignment-args true positional-args false}
             (group-by #(and (map? %) (= (key (first %)) :=)) (rest call))
             deref-if-needed #(if (instance? clojure.lang.IDeref %) @% %)
-            arg-result (deref-if-needed (apply args-validator positional-args))]
+            arg-result (try (deref-if-needed (apply args-validator positional-args))
+                            (catch Exception e
+                              (throw (ex-info (str "Invalid call of " (first call)
+                                                   " types: " (rest call))
+                                              {:error/error true}))))]
         (if (:error/error arg-result)
           arg-result
           (let [assignment-result (reduce (fn [acc a]

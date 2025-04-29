@@ -75,6 +75,7 @@
 
 (defn clogel->edgeql
   [edn]
+  (println "EDN" edn)
   (if (clojure.core/and (symbol? edn) (contains? *clogel-with-bindings* edn))
     (assoc (get *clogel-with-bindings* edn) :value (str edn))
     (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))
@@ -355,7 +356,21 @@
             (-> (top/select {:user/ApiKey [:created-at
                                            :last-used
                                            :id]})
-                (top/filter (eq '.user.id (cast-uuid '$user-id))))))
+                (top/filter (eq '.user.id (cast-uuid '$user-id)))))
+  (defquery
+   'insert-instance-type-unless-exists!
+   [['$family-name :str] ['$size-name :str] ['$vcpu :int16] ['$price :float32]]
+   (-> (top/with [['existing
+                   (-> (top/select :infra/InstanceType)
+                       (top/filter (and (eq '.family '$family-name) (eq '.size '$size-name))))]])
+       (top/select (if-else
+                    (-> (top/update :infra/InstanceType)
+                        (top/filter (and (eq '.family '$family-name) (eq '.size '$size-name)))
+                        (top/set [{:= {:hourly-price '$price}}]))
+                    (exists 'existing)
+                    (top/insert {:infra/InstanceType
+                                 [{:= {:family '$family-name}} {:= {:size '$size-name}}
+                                  {:= {:vcpu-count '$vcpu}} {:= {:hourly-price '$price}}]}))))))
 
 
 (comment

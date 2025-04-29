@@ -157,6 +157,7 @@
                   :by              2.3
                   :insert          4
                   :update          5
+                  :filter          5.05
                   :set             5.1
                   :unless-conflict 4.5
                   :else            4.75
@@ -166,7 +167,7 @@
                            (name k)]))          ;; secondary: alphabetical
          vec)))
 
-(defn compile-modifier [k child] (str (remove-colon-kw k) " " child))
+(defn compile-modifier [k child] (str (remove-colon-kw k) " " child "\n"))
 
 (defn compile-order-by
   [order-by-statement child]
