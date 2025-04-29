@@ -75,7 +75,6 @@
 
 (defn clogel->edgeql
   [edn]
-  (println "EDN" edn)
   (if (clojure.core/and (symbol? edn) (contains? *clogel-with-bindings* edn))
     (assoc (get *clogel-with-bindings* edn) :value (str edn))
     (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))

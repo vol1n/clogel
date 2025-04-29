@@ -157,6 +157,7 @@
                   :by              2.3
                   :insert          4
                   :update          5
+                  :delete          4.5
                   :filter          5.05
                   :set             5.1
                   :unless-conflict 4.5
