@@ -360,4 +360,7 @@
 
 (defn with ([bindings] (with {} bindings)) ([statement bindings] (assoc statement :with bindings)))
 
-(defn order-by ([val] (order-by {} val)) ([statement amount] (assoc statement :order-by val)))
+(defn order-by
+  ([val] (order-by {} val))
+  ([statement val] (assoc statement :order-by val))
+  ([statement val order] (assoc statement :order-by [val order])))
