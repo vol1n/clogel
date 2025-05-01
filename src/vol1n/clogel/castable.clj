@@ -180,7 +180,6 @@ Did you try and use a scalar as an object?"
               fields
               (if (not (set/superset? (set fields) (set required-fields)))
                 {:error/error   true
-                 :error/message (str "Not every required field is there for " object-type
-                                     " Required: " (vec required-fields)
-                                     " Received " fields)}
+                 :error/message (str "Missing required fields: "
+                                     (set/difference (set required-fields) (set fields)))}
                 true)))))

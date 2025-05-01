@@ -49,14 +49,16 @@
 
 (defn insert-validator
   [insert-statement]
-  (println "ins" insert-statement)
   (let [insert (:insert insert-statement)
         limit (:limit insert-statement)]
     (if (not insert)
       (throw (ex-info "should be unreachable" {}))
       (let [failure (validate-map insert-statement
                                   {:insert {:fn      #(or (:insertable (:type %)) (:insertable %))
-                                            :message "Should be unreachable, right?"}
+                                            :message (:not-insertable-because (-> insert-statement
+                                                                                  :insert
+                                                                                  :type
+                                                                                  meta))}
                                    :unless-conflict {:fn      (fn [_] true)
                                                      :message "should be unreachable"}
                                    :else   {:fn (fn [_] true) :message "should be unreachable"}})]
@@ -69,7 +71,6 @@
 
 (defn update-validator
   [update-statement]
-  (println "update-statement" update-statement)
   (let [update (:update update-statement)]
     (if (not update)
       (throw (ex-info "should be unreachable" {}))
@@ -258,7 +259,11 @@
   {:select   (->Node
               :select
               (fn [select-statement]
-                (map (fn [k] (if (= k :project) {} (get select-statement k)))
+                (map (fn [k]
+                       (cond (= k :project) {}
+                             (and (= k :order-by) (vector? (get select-statement k)))
+                             (do (second (get select-statement k)))
+                             :else (get select-statement k)))
                      (sort-keys select-statement)))
               (fn [select-statement types]
                 (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys select-statement) types))))
@@ -266,21 +271,33 @@
    :insert   (->Node
               :insert
               (fn [insert-statement]
-                (map (fn [k] (get insert-statement k)) (sort-keys insert-statement)))
+                (map (fn [k]
+                       (cond (and (= k :order-by) (vector? (get insert-statement k)))
+                             (second (get insert-statement k))
+                             :else (get insert-statement k)))
+                     (sort-keys insert-statement)))
               (fn [insert-statement types]
                 (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys insert-statement) types))))
               [(->Overload insert-validator (build-top-level-compiler :insert))])
    :update   (->Node
               :update
               (fn [update-statement]
-                (map (fn [k] (get update-statement k)) (sort-keys update-statement)))
+                (map (fn [k]
+                       (cond (and (= k :order-by) (vector? (get update-statement k)))
+                             (second (get update-statement k))
+                             :else (get update-statement k)))
+                     (sort-keys update-statement)))
               (fn [update-statement types]
                 (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys update-statement) types))))
               [(->Overload update-validator (build-top-level-compiler :update))])
    :delete   (->Node
               :delete
               (fn [delete-statement]
-                (map (fn [k] (get delete-statement k)) (sort-keys delete-statement)))
+                (map (fn [k]
+                       (cond (and (= k :order-by) (vector? (get delete-statement k)))
+                             (second (get delete-statement k))
+                             :else (get delete-statement k)))
+                     (sort-keys delete-statement)))
               (fn [delete-statement types]
                 (into {} (map (fn [[k t]] [k t]) (map vector (sort-keys delete-statement) types))))
               [(->Overload delete-validator (build-top-level-compiler :delete))])
@@ -292,33 +309,36 @@
                        (merge {:with (mapv vector (map first (:with with-statement)) types)
                                :rest (last types)}))
                      [(->Overload with-validator compile-with)])
-   :group-by (->Node :group-by
-                     (fn [group-by-statement]
-                       (into [(:group group-by-statement)]
-                             (concat (mapv last (:using group-by-statement))
-                                     [(:by group-by-statement)]
-                                     (mapv (fn [k] (get group-by-statement k))
-                                           (clojure.core/filter
-                                            (fn [k] (not (contains? #{:group :using :by} k)))
-                                            (sort-keys group-by-statement))))))
-                     (fn [group-by-statement types]
-                       (:type-form
-                        (reduce (fn [acc [k _]]
-                                  {:type-form (assoc acc k (first (:remaining acc)))
-                                   :remaining (rest (:remaining acc))})
-                                {:type-form (if (contains? group-by-statement :using)
-                                              {:group (first types)
-                                               :using (mapv vector
-                                                            (map first (:using group-by-statement))
-                                                            (rest types))
-                                               :by    (first (drop (inc (count
-                                                                         (:using
-                                                                          group-by-statement)))
-                                                                   types))}
-                                              {:group (first types) :by (second types)})
-                                 :remaining (drop (+ (count (:using group-by-statement)) 2))}
-                                (dissoc group-by-statement :group :using :by))))
-                     [(->Overload group-by-validator compile-group-by)])
+   :group-by (->Node
+              :group-by
+              (fn [group-by-statement]
+                (into [(:group group-by-statement)]
+                      (concat (mapv last (:using group-by-statement))
+                              [(:by group-by-statement)]
+                              (mapv (fn [k]
+                                      (cond (and (= k :order-by)
+                                                 (vector? (get group-by-statement k)))
+                                            (second (get group-by-statement k))
+                                            :else (get group-by-statement k)))
+                                    (clojure.core/filter (fn [k] (not (#{:group :using :by} k)))
+                                                         (sort-keys group-by-statement))))))
+              (fn [group-by-statement types]
+                (:type-form (reduce
+                             (fn [acc [k _]]
+                               {:type-form (assoc acc k (first (:remaining acc)))
+                                :remaining (rest (:remaining acc))})
+                             {:type-form (if (contains? group-by-statement :using)
+                                           {:group (first types)
+                                            :using (mapv vector
+                                                         (map first (:using group-by-statement))
+                                                         (rest types))
+                                            :by    (first (drop (inc (count (:using
+                                                                             group-by-statement)))
+                                                                types))}
+                                           {:group (first types) :by (second types)})
+                              :remaining (drop (+ (count (:using group-by-statement)) 2))}
+                             (dissoc group-by-statement :group :using :by))))
+              [(->Overload group-by-validator compile-group-by)])
    :for      (->Node :for
                      (fn [for-statement] [(second (:for for-statement)) (:union for-statement)])
                      (fn [for-statement types]

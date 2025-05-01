@@ -45,12 +45,15 @@
 
 (defn match-overload
   [call overloads]
-  (let [matched (some (fn [ovl]
-                        (let [result ((:validator ovl) call)]
-                          (when (clojure.core/not (:error/error result))
-                            {:overload ovl :annotations result})))
-                      overloads)]
-    matched))
+  (if (= (clojure.core/count overloads) 1)
+    (let [result ((:validator (first overloads)) call)]
+      (if (:error/error result) result {:overload (first overloads) :annotations result}))
+    (let [matched (some (fn [ovl]
+                          (let [result ((:validator ovl) call)]
+                            (when (clojure.core/not (:error/error result))
+                              {:overload ovl :annotations result})))
+                        overloads)]
+      matched)))
 
 (defgelfuncs)
 (defgelcasts)
@@ -75,111 +78,117 @@
 
 (defn clogel->edgeql
   [edn]
-  (if (clojure.core/and (symbol? edn) (contains? *clogel-with-bindings* edn))
-    (assoc (get *clogel-with-bindings* edn) :value (str edn))
-    (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))
-      (assoc (clojure.core/get *clogel-param-bindings* edn)
-             :value
-             (str \<
-                  (remove-colon-kw (:type (get *clogel-param-bindings* edn)))
-                  \>
-                  (dehyphenate-symbol edn)))
-      (let [node-key
-            (sanitize-kw
-             (cond (clojure.core/and (map? edn) (:with edn)) :with
-                   (map? edn) (some #(when (clojure.core/not (contains? mod-keys %)) %) (keys edn))
-                   (clojure.core/and (vector? edn)
-                                     (every? map? edn)
-                                     (every? #(assignment-operators (key (first %))) edn))
-                   :free-object
-                   (clojure.core/and (vector? edn) (keyword? (first edn)))
-                   (let [key (first edn)]
-                     (if (contains? node-registry (sanitize-kw key))
-                       key
-                       (if *clogel-dot-access-context*
-                         :free-object
-                         (throw (ex-info (str "invalid keyword" key)
-                                         {:valid-keys (keys node-registry) :passed key})))))
-                   (keyword? edn) edn
-                   (symbol? edn) :dot-access
-                   (coll? edn) :collection
-                   :else :scalar))
-            node (get node-registry node-key)]
-        (if (clojure.core/not node)
-          (throw (ex-info (str "invalid keyword" node-key)
-                          {:valid-keys (keys node-registry) :passed node-key}))
-          (let [children ((:generate-children node) edn)
-                compiled-children
-                (if (nil? children)
-                  (seq [])
-                  ;; if it's an object, we need to know what object we're in for children of
-                  ;; this node
-                  (if (contains? gelobject-registry node-key)
-                    (binding [*clogel-dot-access-context* {:type node-key :card :many}]
-                      (map (bound-fn [child] (clogel->edgeql child)) children))
-                    ;; if it's a top level statement (i.e. select)
-                    ;; we need to know what object we're selecting for modifier statements
-                    ;; ex. select User filter .name = "John";
-                    (if (contains? clogel-top-level-statements node-key)
-                      (cond (clojure.core/= node-key :for)
-                            (let [compiled-binding (clogel->edgeql (first children))]
-                              (binding [*clogel-with-bindings* (assoc *clogel-with-bindings*
-                                                                      (sanitize-symbol (first
-                                                                                        (:for edn)))
-                                                                      compiled-binding)]
-                                [compiled-binding (clogel->edgeql (last children))]))
-                            (clojure.core/= node-key :group)
-                            (let [compiled-group-statement (clogel->edgeql (first children))
-                                  {compiled-with-children :compiled bindings :with-bindings}
-                                  (reduce (fn [compiled [b c]]
-                                            (let [result (clogel->edgeql c)]
-                                              (binding [*clogel-with-bindings*
-                                                        (assoc *clogel-with-bindings*
-                                                               (sanitize-symbol b)
-                                                               result)]
-                                                {:compiled      (conj (:compiled compiled) result)
-                                                 :with-bindings *clogel-with-bindings*})))
-                                          {:compiled [] :with-bindings *clogel-with-bindings*}
-                                          (map vector
-                                               (map first (:using edn))
-                                               (clojure.core/take (count (:using edn))
-                                                                  (rest children))))]
-                              (binding [*clogel-with-bindings* bindings]
-                                (conj (cons compiled-group-statement compiled-with-children)
-                                      (map clogel->edgeql
-                                           (clojure.core/drop (inc (count (:using edn)))
-                                                              children)))))
-                            (clojure.core/= node-key :with)
-                            (let [{compiled-with-children :compiled bindings :with-bindings}
-                                  (reduce (fn [compiled [b c]]
-                                            (let [result (clogel->edgeql c)]
-                                              (binding [*clogel-with-bindings*
-                                                        (assoc *clogel-with-bindings*
-                                                               (sanitize-symbol b)
-                                                               result)]
-                                                {:compiled      (conj (:compiled compiled) result)
-                                                 :with-bindings *clogel-with-bindings*})))
-                                          {:compiled [] :with-bindings *clogel-with-bindings*}
-                                          (map vector (map first (:with edn)) (butlast children)))]
-                              (binding [*clogel-with-bindings* bindings]
-                                (conj compiled-with-children (clogel->edgeql (last children)))))
-                            :else
-                            (let [compiled-first (clogel->edgeql (first children))]
-                              (binding [*clogel-dot-access-context* {:type (:type compiled-first)
-                                                                     :card (:card compiled-first)}]
-                                (into [compiled-first]
-                                      (reduce #(conj %1 (clogel->edgeql %2)) [] (rest children))))))
-                      (map clogel->edgeql children))))
-                type-form ((:build-type-form node) edn (map #(dissoc % :value) compiled-children))
-                {annotations :annotations overload :overload} (match-overload type-form
-                                                                              (:overloads node))]
-            (if (clojure.core/not overload)
-              (throw (ex-info (str "No overload for node of type " node-key " for value " edn)
-                              {:node edn :valid (:overloads node)}))
-              (assoc annotations
-                     :value
-                     (apply (:compile-fn overload)
-                            (into [edn] (map :value compiled-children)))))))))))
+  (if (contains? (meta edn) :modifies)
+    (binding [*clogel-dot-access-context* {:type (:modifies (meta edn)) :card :many}]
+      (clogel->edgeql (with-meta edn (dissoc (meta edn) :modifies))))
+    (if (clojure.core/and (symbol? edn) (contains? *clogel-with-bindings* edn))
+      (assoc (get *clogel-with-bindings* edn) :value (str edn))
+      (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))
+        (assoc (clojure.core/get *clogel-param-bindings* edn)
+               :value
+               (str \<
+                    (remove-colon-kw (:type (get *clogel-param-bindings* edn)))
+                    \>
+                    (dehyphenate-symbol edn)))
+        (let [node-key
+              (sanitize-kw
+               (cond (clojure.core/and (map? edn) (:with edn)) :with
+                     (map? edn) (some #(when (clojure.core/not (contains? mod-keys %)) %)
+                                      (keys edn))
+                     (clojure.core/and (vector? edn)
+                                       (every? map? edn)
+                                       (every? #(assignment-operators (key (first %))) edn))
+                     :free-object
+                     (clojure.core/and (vector? edn) (keyword? (first edn)))
+                     (let [key (first edn)]
+                       (if (contains? node-registry (sanitize-kw key))
+                         key
+                         (if *clogel-dot-access-context*
+                           :free-object
+                           (throw (ex-info (str "invalid keyword" key)
+                                           {:valid-keys (keys node-registry) :passed key})))))
+                     (keyword? edn) edn
+                     (symbol? edn) :dot-access
+                     (coll? edn) :collection
+                     :else :scalar))
+              node (get node-registry node-key)]
+          (if (clojure.core/not node)
+            (throw (ex-info (str "invalid keyword" node-key)
+                            {:valid-keys (keys node-registry) :passed node-key}))
+            (let [children ((:generate-children node) edn)
+                  compiled-children
+                  (if (nil? children)
+                    (seq [])
+                    ;; if it's an object, we need to know what object we're in for children of
+                    ;; this node
+                    (if (contains? gelobject-registry node-key)
+                      (binding [*clogel-dot-access-context* {:type node-key :card :many}]
+                        (map (bound-fn [child] (clogel->edgeql child)) children))
+                      ;; if it's a top level statement (i.e. select)
+                      ;; we need to know what object we're selecting for modifier statements
+                      ;; ex. select User filter .name = "John";
+                      (if (contains? clogel-top-level-statements node-key)
+                        (cond
+                          (clojure.core/= node-key :for)
+                          (let [compiled-binding (clogel->edgeql (first children))]
+                            (binding [*clogel-with-bindings* (assoc *clogel-with-bindings*
+                                                                    (sanitize-symbol (first (:for
+                                                                                             edn)))
+                                                                    compiled-binding)]
+                              [compiled-binding (clogel->edgeql (last children))]))
+                          (clojure.core/= node-key :group)
+                          (let [compiled-group-statement (clogel->edgeql (first children))
+                                {compiled-with-children :compiled bindings :with-bindings}
+                                (reduce
+                                 (fn [compiled [b c]]
+                                   (let [result (clogel->edgeql c)]
+                                     (binding [*clogel-with-bindings* (assoc *clogel-with-bindings*
+                                                                             (sanitize-symbol b)
+                                                                             result)]
+                                       {:compiled      (conj (:compiled compiled) result)
+                                        :with-bindings *clogel-with-bindings*})))
+                                 {:compiled [] :with-bindings *clogel-with-bindings*}
+                                 (map vector
+                                      (map first (:using edn))
+                                      (clojure.core/take (count (:using edn)) (rest children))))]
+                            (binding [*clogel-with-bindings* bindings]
+                              (conj (cons compiled-group-statement compiled-with-children)
+                                    (map clogel->edgeql
+                                         (clojure.core/drop (inc (count (:using edn))) children)))))
+                          (clojure.core/= node-key :with)
+                          (let [{compiled-with-children :compiled bindings :with-bindings}
+                                (reduce (fn [compiled [b c]]
+                                          (let [result (clogel->edgeql c)]
+                                            (binding [*clogel-with-bindings* (assoc
+                                                                              *clogel-with-bindings*
+                                                                              (sanitize-symbol b)
+                                                                              result)]
+                                              {:compiled      (conj (:compiled compiled) result)
+                                               :with-bindings *clogel-with-bindings*})))
+                                        {:compiled [] :with-bindings *clogel-with-bindings*}
+                                        (map vector (map first (:with edn)) (butlast children)))]
+                            (binding [*clogel-with-bindings* bindings]
+                              (conj compiled-with-children (clogel->edgeql (last children)))))
+                          :else
+                          (let [compiled-first (clogel->edgeql (first children))]
+                            (binding [*clogel-dot-access-context* {:type (:type compiled-first)
+                                                                   :card (:card compiled-first)}]
+                              (into [compiled-first]
+                                    (reduce #(conj %1 (clogel->edgeql %2)) [] (rest children))))))
+                        (map clogel->edgeql children))))
+                  type-form ((:build-type-form node) edn (map #(dissoc % :value) compiled-children))
+                  {annotations :annotations overload :overload error :error/message}
+                  (match-overload type-form (:overloads node))]
+              (if error
+                (throw (ex-info (str "Error for " node-key " statement: " error ", got: " edn)
+                                {:node edn :error error}))
+                (if (clojure.core/not overload)
+                  (throw (ex-info (str "No overload for node of type " node-key " for value " edn)
+                                  {:node edn :valid (:overloads node)}))
+                  (assoc annotations
+                         :value
+                         (apply (:compile-fn overload)
+                                (into [edn] (map :value compiled-children)))))))))))))
 
 (defn hyphenate-keywords
   [data]

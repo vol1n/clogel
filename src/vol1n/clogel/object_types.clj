@@ -121,17 +121,26 @@
                                 {}))))
                     {}
                     vec)]
-               (let [fin (assoc (cond-> reduced
-                                  only-existing-assignments (assoc :settable true)
-                                  (and only=
-                                       (:clogel-name object-type)
-                                       (not (:error/error (validate-object-type-cast
-                                                           (or (:clogel-name object-type)
-                                                               object-type)
-                                                           reduced))))
-                                  (assoc :insertable true))
-                                :object-type
-                                (or (:clogel-name object-type) :free-object))]
+               (let [fin
+                     (assoc
+                      (let [validation-result (validate-object-type-cast
+                                               (or (:clogel-name object-type) object-type)
+                                               reduced)]
+                        (cond-> reduced
+                          only-existing-assignments (assoc :settable true)
+                          (and only=
+                               (:clogel-name object-type)
+                               (not (:error/error validation-result)))
+                          (assoc :insertable true)
+                          (not only=)
+                          (with-meta {:not-insertable-because
+                                      "Can only insert an object with assignment fields provided"})
+                          (and only= (:clogel-name object-type) (:error/error validation-result))
+                          (with-meta {:not-insertable-because
+                                      (str "type " (:clogel-name object-type)
+                                           " " (:error/message validation-result))})))
+                      :object-type
+                      (or (:clogel-name object-type) :free-object))]
                  fin))))))
      :card :many}))
 
@@ -235,6 +244,20 @@
                                  (into [(val (first object))] compiled-children)))
                \}))))
 
+(defn build-modifier-type-form
+  [modifiers types]
+  (:type-form (reduce (fn [acc k]
+                        (cond (and (= k :group-by) (vector? (get modifiers :group-by)))
+                              {:type-form (assoc (:type-form acc)
+                                                 :group-by
+                                                 [(first (:types acc))
+                                                  (last (get modifiers :group-by))])
+                               :types     (rest (:types acc))}
+                              :else {:type-form (assoc (:type-form acc) k (first (:types acc)))
+                                     :types     (rest (:types acc))}))
+                      {:type-form {} :types types}
+                      (sort-keys modifiers))))
+
 (defn build-projection-type-form
   [proj & types]
   (reduce (fn [acc item]
@@ -244,10 +267,18 @@
                                     {(key (first item)) {(key (first (val (first item))))
                                                          (first (:remaining acc))}})
                    :remaining (rest (:remaining acc))}
-                  :else (let [result (apply build-projection-type-form
-                                            (into [(val (first item))] (:remaining acc)))]
-                          {:vec       (conj (:vec acc) {(key (first item)) (:vec result)})
-                           :remaining (:remaining result)})))
+                  :else
+                  (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %)) item)
+                        modifiers (dissoc item main-key)
+                        modifier-type-form (build-modifier-type-form modifiers
+                                                                     (take (count (keys modifiers))
+                                                                           (:remaining acc)))
+                        result (apply build-projection-type-form
+                                      (into [(val (first item))]
+                                            (drop (count (keys modifiers)) (:remaining acc))))]
+                    {:vec       (conj (:vec acc)
+                                      (merge modifier-type-form {main-key (:vec result)}))
+                     :remaining (:remaining result)})))
           {:vec [] :remaining types}
           proj))
 
@@ -262,24 +293,48 @@
                                                            (into [(val (first object))] types)))}
           :else (throw (ex-info "Botch" {})))))
 
+(defn get-modifier-children
+  [modifiers current-type]
+  (let [children (map #(let [meta-attached
+                             (cond (and (= % :group-by) (vector? (get modifiers :group-by)))
+                                   (with-meta (first (get modifiers :group-by))
+                                              {:modifies current-type})
+                                   :else (with-meta (get modifiers %) {:modifies current-type}))]
+                         meta-attached)
+                      (sort-keys modifiers))]
+    children))
+
 (defn get-projection-children
-  [proj]
+  [proj type]
   (reduce (fn [acc item]
             (cond (keyword? item) acc
                   (and (map? item) (assignment-operators (key (first item))))
                   (conj acc (val (first (get item (key (first item))))))
-                  :else (concat acc (get-projection-children item))))
+                  (map-entry? item) (get-projection-children (last item) type)
+                  :else
+                  (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %)) item)
+                        modifiers (dissoc item main-key)]
+                    (let [modifier-children (get-modifier-children
+                                             modifiers
+                                             (get object-registry (:type (get type main-key))))]
+                      (concat acc
+                              modifier-children
+                              (get-projection-children {main-key (get item main-key)}
+                                                       (get object-registry
+                                                            (:type (get type main-key)))))))))
           []
           proj))
 
 (defn get-free-object-children
   [obj]
-  (let [children (get-projection-children {:free-object obj})] children))
+  (let [children (get-projection-children {:free-object obj} nil)] children))
 
 (def generate-object-children
   (fn [object]
     (let [children (cond (keyword? object) nil
-                         (map? object) (get-projection-children object))]
+                         (map? object) (get-projection-children object
+                                                                (get object-registry
+                                                                     (key (first object)))))]
       children)))
 
 (defn resolve-path
