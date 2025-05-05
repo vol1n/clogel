@@ -92,6 +92,10 @@
 (defn build-fn-validator
   [f]
   (let [is-return-generic (is-type-generic? (:return-type f))
+        is-generic-collection (when (and is-return-generic
+                                         (map? (:return-type f))
+                                         (= (count (val (first (:return-type f)))) 1))
+                                (is-type-generic? (first (val (first (:return-type f))))))
         update-annotations
         (fn [p old new]
           (let [is-param-generic (is-type-generic? (:param-type p))
@@ -152,11 +156,15 @@
                                           assignment-args)]
             (if (:error/error assignment-result)
               assignment-result
-              (if is-return-generic
-                {:type (lub [(:type arg-result) (:type assignment-result)])
+              (if is-generic-collection
+                {:type {(key (first (:return-type f))) [(lub [(:type arg-result)
+                                                              (:type assignment-result)])]}
                  :card (max-card [(:card arg-result) (:card assignment-result)])}
-                {:type (:return-type f)
-                 :card (max-card [(:card arg-result) (:card assignment-result)])}))))))))
+                (if is-return-generic
+                  {:type (lub [(:type arg-result) (:type assignment-result)])
+                   :card (max-card [(:card arg-result) (:card assignment-result)])}
+                  {:type (:return-type f)
+                   :card (max-card [(:card arg-result) (:card assignment-result)])})))))))))
 
 (defn chop-last [s n] (let [chars (count s)] (if (<= chars n) "" (subs s 0 (- chars n)))))
 

@@ -11,6 +11,7 @@
 ;; x ≥ s iff (castable? s x)
 (defn lub
   [types]
+  (println "lubbing" types)
   (if (empty? types)
     :empty
     (let [objects? (every? #(or (:object-type %) (get object-registry %) (= :GelObject %) (nil? %))
@@ -18,16 +19,16 @@
           comparison (if objects? is-ancestor? implicit-castable?)
           all-types (if objects? (keys object-registry) (keys implicit-casts-map))
           types (map #(or (:object-type %) %) types)
-          lubbed (if (apply = types)
-                   (first types)
-                   (reduce (fn [acc x] (if (or (nil? acc) (comparison acc x)) x acc))
-                           nil
-                           (filter #(every?
-                                     (fn [s] (let [comparison-res (comparison % s)] comparison-res))
+          lubbed
+          (if (apply = (filter (fn [t] (not (or (nil? t) (:error/error t) (= t :empty)))) types))
+            (first types)
+            (reduce (fn [acc x] (if (or (nil? acc) (comparison acc x)) x acc))
+                    nil
+                    (filter #(every? (fn [s] (let [comparison-res (comparison % s)] comparison-res))
                                      (filter (fn [t]
                                                (not (or (nil? t) (:error/error t) (= t :empty))))
                                              types))
-                                   all-types)))]
+                            all-types)))]
       lubbed)))
 
 (comment
