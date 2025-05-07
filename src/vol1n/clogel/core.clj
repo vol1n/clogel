@@ -38,6 +38,7 @@
 (def delete top/delete)
 (def with top/with)
 (def access func/access)
+(def tuple-access func/tuple-access)
 (def unless-conflict top/unless-conflict)
 (def cast casts/cast)
 (def tuple colls/tuple)

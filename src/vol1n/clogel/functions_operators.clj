@@ -86,8 +86,13 @@
 (defn is-type-generic?
   [t]
   (if (map? t)
-    (any? (map #(contains? gel-abstract-types %) (last (first t))))
+    (every? #(not (some? %)) (map #(contains? gel-abstract-types %) (val (first t))))
     (contains? gel-abstract-types t)))
+
+
+(comment
+  (is-type-generic? {:tuple [:str :json]})
+  (is-type-generic? :anyint))
 
 (defn build-fn-validator
   [f]
@@ -138,6 +143,7 @@
             deref-if-needed #(if (instance? clojure.lang.IDeref %) @% %)
             arg-result (try (deref-if-needed (apply args-validator positional-args))
                             (catch Exception e
+                              (println "cause" (.getMessage e))
                               (throw (ex-info (str "Invalid call of " (first call)
                                                    " types: " (rest call))
                                               {:error/error true}))))]
@@ -411,13 +417,37 @@ select schema::Operator {
 filter .name = 'std::[]';
 "))
 
+(defn tuple-access-validator
+  [[_ & args]]
+  (let [tup (first args)
+        index (last args)]
+    (if (and (map? (:type tup)) (= :tuple (key (first (:type tup)))))
+      (if (int? index)
+        {:type (nth (val (first (:type tup))) index) :card (:card tup)}
+        {:error/error "Invalid type to index tuple"})
+      {:error/error true :error/message "First arg not tuple"})))
+
+(defn tuple-access-compiler
+  [call & compiled-children]
+  (str (first compiled-children) "." (last call)))
+
+(comment
+  (tuple-access-validator [:tuple-access {:type {:tuple [:int :str]} :card :singleton} 1]))
+
 (comment
   (get-slices))
+
 (def gel-index
-  {:access (->Node :access
-                   (fn [[_ & args]] (into [] args))
-                   (fn [_ types] (into [:index] types))
-                   (mapv #(->Overload (build-index-slice-validator %) index-slice-compiler)
-                         (get-slices)))})
+  {:access       (->Node :access
+                         (fn [[_ & args]] (into [] args))
+                         (fn [_ types] (into [:index] types))
+                         (mapv #(->Overload (build-index-slice-validator %) index-slice-compiler)
+                               (get-slices)))
+   :tuple_access (->Node :tuple_access
+                         (fn [[_ & args]] [(first args)])
+                         (fn [call types] [:tuple-access (first types) (last call)])
+                         [(->Overload tuple-access-validator tuple-access-compiler)])})
 
 (defn access ([item i] [:access item i]) ([item l r] [:access item l r]))
+
+(defn tuple-access [tuple i] [:tuple-access tuple i])

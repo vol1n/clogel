@@ -77,6 +77,9 @@ FILTER EXISTS (
                    #{:anyscalar :anyenum :anytuple :anyint :anyfloat :anyreal :anypoint :anydiscrete
                      :anycontiguous}))))
 
+(comment
+  (build-abstract-types))
+
 (def gel-abstract-types (build-abstract-types))
 
 (defn is-abstract-type? [t] (contains? gel-abstract-types t))

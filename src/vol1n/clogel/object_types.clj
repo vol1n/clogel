@@ -306,13 +306,15 @@
 
 (defn get-projection-children
   [proj type]
+
   (reduce (fn [acc item]
             (cond (keyword? item) acc
                   (and (map? item) (assignment-operators (key (first item))))
                   (conj acc (val (first (get item (key (first item))))))
                   (map-entry? item) (get-projection-children (last item) type)
                   :else
-                  (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %)) item)
+                  (let [
+                        main-key (some #(when (not (contains? mod-keys (key %))) (key %)) item)
                         modifiers (dissoc item main-key)]
                     (let [modifier-children (get-modifier-children
                                              modifiers
