@@ -112,7 +112,7 @@
                                      (get item main-key)}))))
                         (keyword? item)
                         (if (or (contains? type item) (contains? type (sanitize-kw item)))
-                          (assoc acc item (get type item))
+                          (assoc acc item (or (get type item) (get type (sanitize-kw item))))
                           (throw (ex-info (str "Key " item " does not exist on type" type)
                                           {:error/error true})))
                         :else (throw
@@ -306,24 +306,22 @@
 
 (defn get-projection-children
   [proj type]
-
   (reduce (fn [acc item]
             (cond (keyword? item) acc
                   (and (map? item) (assignment-operators (key (first item))))
                   (conj acc (val (first (get item (key (first item))))))
                   (map-entry? item) (get-projection-children (last item) type)
-                  :else
-                  (let [
-                        main-key (some #(when (not (contains? mod-keys (key %))) (key %)) item)
-                        modifiers (dissoc item main-key)]
-                    (let [modifier-children (get-modifier-children
-                                             modifiers
-                                             (get object-registry (:type (get type main-key))))]
-                      (concat acc
-                              modifier-children
-                              (get-projection-children {main-key (get item main-key)}
-                                                       (get object-registry
-                                                            (:type (get type main-key)))))))))
+                  :else (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %))
+                                             item)
+                              modifiers (dissoc item main-key)
+                              modifier-children (get-modifier-children
+                                                 modifiers
+                                                 (get object-registry (:type (get type main-key))))]
+                          (concat acc
+                                  modifier-children
+                                  (get-projection-children {main-key (get item main-key)}
+                                                           (get object-registry
+                                                                (:type (get type main-key))))))))
           []
           proj))
 
@@ -361,26 +359,29 @@
   [sym]
   (if (symbol? sym)
     (let [as-str (str/replace (str sym) #"-" "_")
-          access-path
-          (if (= (first as-str) \.)
-            (if *clogel-dot-access-context*
-              (cons (or (:object-type (:type *clogel-dot-access-context*))
-                        (or (:type (:type *clogel-dot-access-context*))
-                            (:type *clogel-dot-access-context*)))
-                    (rest (map keyword (str/split as-str #"\."))))
-              (throw (ex-info "Tried to use leading dot access with no object context"
-                              {:dot-access-form sym})))
-            (let [kws (mapv keyword (str/split as-str #"\."))]
-              (if-let [with-binding
-                       (or (get *clogel-with-bindings* (symbol (remove-colon-kw (first kws))))
-                           (get *clogel-param-bindings* (symbol (remove-colon-kw (first kws)))))]
-                (into [(or (:type (:type with-binding)) (:type with-binding))] (rest kws))
-                (if (not (contains? object-registry (first kws)))
-                  (throw (ex-info (str "Invalid symbol form: "
-                                       sym
-                                       " does not lead with a dot or valid object type")
-                                  {:error/error true}))
-                  kws))))]
+          access-path (if (= (first as-str) \.)
+                        (if *clogel-dot-access-context*
+                          (cons (or (:object-type (:type *clogel-dot-access-context*))
+                                    (or (:type (:type *clogel-dot-access-context*))
+                                        (:type *clogel-dot-access-context*)))
+                                (rest (map keyword (str/split as-str #"\."))))
+                          (throw (ex-info "Tried to use leading dot access with no object context"
+                                          {:dot-access-form sym})))
+                        (let [kws (mapv keyword (str/split as-str #"\."))]
+                          (if-let [with-binding (or (get *clogel-with-bindings*
+                                                         (symbol (remove-colon-kw (first kws))))
+                                                    (get *clogel-param-bindings*
+                                                         (symbol (remove-colon-kw (first kws)))))]
+                            (into [(or (:object-type (:type with-binding))
+                                       (:type (:type with-binding))
+                                       (:type with-binding))]
+                                  (rest kws))
+                            (if (not (contains? object-registry (first kws)))
+                              (throw (ex-info (str "Invalid symbol form: "
+                                                   sym
+                                                   " does not lead with a dot or valid object type")
+                                              {:error/error true}))
+                              kws))))]
       (resolve-path (rest access-path)
                     {:type (first access-path)
                      :card (if (and *clogel-dot-access-context*

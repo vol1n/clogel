@@ -66,4 +66,4 @@ select schema::ObjectType {
 ;; { :User { :firstName {:type :str :card :singleton} :lastName {:type :str :card :singleton} } }
 (def object-registry (parse-object-registry raw-objects))
 
-
+(println "OBJECT REG" object-registry)
