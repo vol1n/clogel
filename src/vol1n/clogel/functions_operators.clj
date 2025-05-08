@@ -114,15 +114,17 @@
         positional-params (filter #(= "PositionalParam" (:kind %)) (:params f))
         variadic-param (some #(when (= "VariadicParam" (:kind %)) %) (:params f))
         named-only-params (filter #(= "NamedOnlyParam" (:kind %)) (:params f))
-        positional-validator
-        (reduce (fn [acc p]
-                  (let [validator (build-validator p)]
-                    (fn [& args]
-                      (let [old (apply acc (butlast args))
-                            new (validator (last args))]
-                        (if (:error/error new) (reduced new) (update-annotations p old new))))))
-                (fn [& _] {:card :singleton :type nil})
-                positional-params)
+        positional-validator (reduce (fn [acc p]
+                                       (let [validator (build-validator p)]
+                                         (fn [& args]
+                                           (let [old (apply acc (butlast args))
+                                                 new (validator (last args))
+                                                 updated (if (:error/error new)
+                                                           (reduced new)
+                                                           (update-annotations p old new))]
+                                             updated))))
+                                     (fn [& _] {:card :singleton :type nil})
+                                     positional-params)
         named-only-validators
         (reduce (fn [acc np] (assoc acc (gel-type->clogel-type (:name np)) (build-validator np)))
                 {}
