@@ -33,6 +33,7 @@
   [select-statement]
   (let [select (:select select-statement)
         limit (:limit select-statement)]
+    (println "SERECT" select)
     (if (not select)
       (throw (ex-info "should be unreachable" {}))
       (let [failure (validate-map select-statement
@@ -42,10 +43,11 @@
                                          modifier-validators))]
         (if failure
           failure
-          {:type (:type select)
-           :card (if (and (= limit 1) (not= :singleton (:card select)))
-                   :optional
-                   (:card select))})))))
+          (merge (:select select-statement)
+                 {:type (:type select)
+                  :card (if (and (= limit 1) (not= :singleton (:card select)))
+                          :optional
+                          (:card select))}))))))
 
 (defn insert-validator
   [insert-statement]
@@ -71,6 +73,7 @@
 
 (defn update-validator
   [update-statement]
+  (println "update statemnt" update-statement)
   (let [update (:update update-statement)]
     (if (not update)
       (throw (ex-info "should be unreachable" {}))
@@ -99,6 +102,7 @@
 
 (defn with-validator
   [with-entry]
+  (println "with entry" with-entry)
   (let [bindings (:with with-entry)
         rest (:rest with-entry)
         error (map

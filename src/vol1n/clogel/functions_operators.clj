@@ -96,7 +96,8 @@
 
 (defn build-fn-validator
   [f]
-  (let [is-return-generic (is-type-generic? (:return-type f))
+  (let [is-assert (str/starts-with? (str (:name f)) "std::assert")
+        is-return-generic (is-type-generic? (:return-type f))
         is-generic-collection (when (and is-return-generic
                                          (map? (:return-type f))
                                          (= (count (val (first (:return-type f)))) 1))
@@ -169,8 +170,13 @@
                                                               (:type assignment-result)])]}
                  :card (max-card [(:card arg-result) (:card assignment-result)])}
                 (if is-return-generic
-                  {:type (lub [(:type arg-result) (:type assignment-result)])
-                   :card (max-card [(:card arg-result) (:card assignment-result)])}
+                  (if (and is-assert (:type (:type (second call))))
+                    {:type (merge (:type (second call))
+                                  {:object-type (lub [(:type arg-result)
+                                                      (:type assignment-result)])})
+                     :card (max-card [(:card arg-result) (:card assignment-result)])}
+                    {:type (lub [(:type arg-result) (:type assignment-result)])
+                     :card (max-card [(:card arg-result) (:card assignment-result)])})
                   {:type (:return-type f)
                    :card (max-card [(:card arg-result) (:card assignment-result)])})))))))))
 
