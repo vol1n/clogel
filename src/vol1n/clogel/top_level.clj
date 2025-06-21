@@ -266,7 +266,8 @@
                 (map (fn [k]
                        (cond (= k :project) {}
                              (and (= k :order-by) (vector? (get select-statement k)))
-                             (do (second (get select-statement k)))
+                             (do (println "printing group-by" (get select-statement k))
+                                 (first (get select-statement k)))
                              :else (get select-statement k)))
                      (sort-keys select-statement)))
               (fn [select-statement types]
