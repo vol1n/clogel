@@ -179,7 +179,7 @@
 (defn compile-order-by
   [order-by-statement child]
   (if (vector? order-by-statement)
-    (str "order by " child " " (last order-by-statement))
+    (str "order by " child " " (last order-by-statement) "\n")
     (compile-modifier :order-by child)))
 
 (defn compile-unless-conflict
