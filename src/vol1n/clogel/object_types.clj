@@ -4,7 +4,8 @@
              [gel-type->clogel-type ->Node ->Overload remove-colon-kw max-card sanitize-kw
               *clogel-dot-access-context* *clogel-with-bindings* *clogel-param-bindings*]]
             [vol1n.clogel.castable :refer [implicit-castable? validate-object-type-cast]]
-            [vol1n.clogel.object-util :refer [object-registry raw-objects]]))
+            [vol1n.clogel.object-util :refer [object-registry raw-objects]]
+            [clojure.pprint :as pprint]))
 
 
 (def mod-keys #{:limit :order-by :filter :offset})
@@ -33,115 +34,111 @@
        (keyword? object)
        (if (= (sanitize-kw object) (:clogel-name object-type))
          {:card :many :type (:clogel-name object-type) :deletable true :updatable true}
-         (throw (ex-info "We've got problems BOV" {})))
+         (throw (ex-info "We've got problems" {})))
        (and (map? object) (vector? (last (first object))))
-       (do
-         (let [vec (last (first object))
-               type (if (= (key (first object)) :free-object)
-                      :free-object
-                      (get object-registry (sanitize-kw (key (first object)))))
-               only-assignments
-               (every? (fn [item] (and (map? item) (assignment-operators (key (first item))))) vec)
-               only-existing-assignments (and only-assignments
-                                              (every? (fn [item]
-                                                        (get type
-                                                             (-> item
-                                                                 first
-                                                                 val
-                                                                 first
-                                                                 key
-                                                                 sanitize-kw)))
-                                                      vec))
-               only= (and only-assignments (every? (fn [item] (#{:=} (key (first item)))) vec))]
-           (if (not type)
-             (throw (ex-info (str "Cannot project non-object type "
-                                  (or (key (first object)) object))
-                             {:error/type type :error/error true}))
-             (let [reduced
-                   (reduce
-                    (fn [acc item]
-                      (cond
-                        (and (map? item) (assignment-operators (key (first item))))
-                        ;; assignment
-                        (if (= (key (first item)) :=)
-                          (assoc acc
-                                 (sanitize-kw (key (first (val (first item)))))
-                                 (val (first (val (first item)))))
-                          (let [assign-to (-> item
-                                              first
-                                              val
-                                              first
-                                              key
-                                              sanitize-kw)
-                                assign-value (-> item
-                                                 first
-                                                 val
-                                                 first
-                                                 val)
-                                attribute-type (get type assign-to)]
-                            (if (nil? attribute-type)
-                              (throw (ex-info (str "Cannot use assignment operator (other than :=)"
-                                                   "on non-existent field "
-                                                   assign-to)
-                                              {:error/error true}))
-                              (if (validate-object-type-cast (:type assign-value)
-                                                             (:type attribute-type))
-                                (assoc acc assign-to attribute-type)
-                                (throw (ex-info (str "Tried to assign type " (:type assign-value)
-                                                     " to " (:type attribute-type)
-                                                     " for field: " assign-to)
-                                                {:error/error true}))))))
-                        (map? item)
-                        ;; nesting
-                        (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %))
-                                             item)
-                              modifiers (dissoc item main-key)]
-                          (doseq [[mod val] modifiers]
-                            (when (not ((get-in modifier-validators [mod :fn]) val))
-                              (throw (ex-info (str "Value " val " for modifier " mod "invalid")
-                                              {:error/error true})))
-                            modifiers)
-                          (assoc acc
-                                 main-key
-                                 (if (true? (get item main-key))
-                                   main-key
-                                   (validator
-                                    {(or (:type (get type main-key))
-                                         (throw (ex-info (str "Key " main-key " not found on type")
-                                                         {})))
-                                     (get item main-key)}))))
-                        (keyword? item)
-                        (if (or (contains? type item) (contains? type (sanitize-kw item)))
-                          (assoc acc item (or (get type item) (get type (sanitize-kw item))))
-                          (throw (ex-info (str "Key " item " does not exist on type" type)
-                                          {:error/error true})))
-                        :else (throw
-                               (ex-info
-                                "Invalid type within projection vector expected map or keyword"
-                                {}))))
-                    {}
-                    vec)]
-               (let [fin
-                     (assoc
-                      (let [validation-result (validate-object-type-cast
-                                               (or (:clogel-name object-type) object-type)
-                                               reduced)]
-                        (cond-> reduced
-                          only-existing-assignments (assoc :settable true)
-                          (and only=
-                               (:clogel-name object-type)
-                               (not (:error/error validation-result)))
-                          (assoc :insertable true)
-                          (not only=)
-                          (with-meta {:not-insertable-because
-                                      "Can only insert an object with assignment fields provided"})
-                          (and only= (:clogel-name object-type) (:error/error validation-result))
-                          (with-meta {:not-insertable-because
-                                      (str "type " (:clogel-name object-type)
-                                           " " (:error/message validation-result))})))
-                      :object-type
-                      (or (:clogel-name object-type) :free-object))]
-                 fin))))))
+       (let [vec (last (first object))
+             type (if (= (key (first object)) :free-object)
+                    :free-object
+                    (get object-registry (sanitize-kw (key (first object)))))
+             only-assignments
+             (every? (fn [item] (and (map? item) (assignment-operators (key (first item))))) vec)
+             only-existing-assignments (and only-assignments
+                                            (every? (fn [item]
+                                                      (get type
+                                                           (-> item
+                                                               first
+                                                               val
+                                                               first
+                                                               key
+                                                               sanitize-kw)))
+                                                    vec))
+             only= (and only-assignments (every? (fn [item] (#{:=} (key (first item)))) vec))]
+         (if (not type)
+           (throw (ex-info (str "Cannot project non-object type " (or (key (first object)) object))
+                           {:error/type type :error/error true}))
+           (let [reduced
+                 (reduce
+                  (fn [acc item]
+                    (cond
+                      (and (map? item) (assignment-operators (key (first item))))
+                      ;; assignment
+                      (if (= (key (first item)) :=)
+                        (assoc acc
+                               (sanitize-kw (key (first (val (first item)))))
+                               (val (first (val (first item)))))
+                        (let [assign-to (-> item
+                                            first
+                                            val
+                                            first
+                                            key
+                                            sanitize-kw)
+                              assign-value (-> item
+                                               first
+                                               val
+                                               first
+                                               val)
+                              attribute-type (get type assign-to)]
+                          (if (nil? attribute-type)
+                            (throw (ex-info (str "Cannot use assignment operator (other than :=)"
+                                                 "on non-existent field "
+                                                 assign-to)
+                                            {:error/error true}))
+                            (if (validate-object-type-cast (:type assign-value)
+                                                           (:type attribute-type))
+                              (assoc acc assign-to attribute-type)
+                              (throw (ex-info (str "Tried to assign type " (:type assign-value)
+                                                   " to " (:type attribute-type)
+                                                   " for field: " assign-to)
+                                              {:error/error true}))))))
+                      (map? item)
+                      ;; nesting
+                      (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %)) item)
+                            modifiers (dissoc item main-key)]
+                        (doseq [[mod val] modifiers]
+                          (when (not ((get-in modifier-validators [mod :fn]) val))
+                            (throw (ex-info (str "Value " val " for modifier " mod "invalid")
+                                            {:error/error true})))
+                          modifiers)
+                        (assoc
+                         acc
+                         main-key
+                         (if (true? (get item main-key))
+                           main-key
+                           (validator
+                            {(or (:type (or (get type main-key) (get type (sanitize-kw main-key))))
+                                 (throw (ex-info (str "Key " main-key " not found on type") {})))
+                             (get item main-key)}))))
+                      (keyword? item)
+                      (if (or (contains? type item) (contains? type (sanitize-kw item)))
+                        (assoc acc item (or (get type item) (get type (sanitize-kw item))))
+                        (throw (ex-info (str "Key " item " does not exist on type" type)
+                                        {:error/error true})))
+                      :else (throw (ex-info
+                                    "Invalid type within projection vector expected map or keyword"
+                                    {}))))
+                  {}
+                  vec)]
+             (let [fin (assoc
+                        (let [validation-result (validate-object-type-cast
+                                                 (or (:clogel-name object-type) object-type)
+                                                 reduced)]
+                          (cond-> reduced
+                            only-existing-assignments (assoc :settable true)
+                            (and only=
+                                 (:clogel-name object-type)
+                                 (not (:error/error validation-result)))
+                            (assoc :insertable true)
+                            (not only=)
+                            (with-meta
+                              {:not-insertable-because
+                               "Can only insert an object with assignment fields provided"})
+                            (and only= (:clogel-name object-type) (:error/error validation-result))
+                            (with-meta {:not-insertable-because
+                                        (str "type " (:clogel-name object-type)
+                                             " " (:error/message validation-result))})))
+                        :object-type
+                        (or (:clogel-name object-type) :free-object))]
+               fin)))))
      :card :many}))
 
 (defn validate-free-object
@@ -160,19 +157,27 @@
         val-result (validator {object-type object})]
     val-result))
 
-(defn compile-modifier [k child] (str (remove-colon-kw k) " " child))
+(defn compile-modifier [k child] (str (remove-colon-kw k) " " child "\n"))
 
 (defn sort-keys
   [m]
-  (->> (keys m)
-       (sort-by (fn [k] [(name k)])) ;; secondary: alphabetical
-       vec))
+  (let [priority {:filter 5.05 :order-by 6 :offset 6.1 :limit 6.2}]
+    (->> (keys m)
+         (sort-by (fn [k] [(get priority k 999) ;; primary: custom priority for mods
+                           (name k)]))          ;; secondary: alphabetical
+         vec)))
 
 (defn compile-order-by
   [order-by-statement child]
   (if (vector? order-by-statement)
     (str "order by " child " " (last order-by-statement))
     (compile-modifier :order-by child)))
+
+(defn proj-keyfn
+  [item]
+  (cond (keyword? item) (name item)
+        (and (map? item) (vector? (val (first item)))) (name (key (first item)))
+        (and (map? item) (map? (val (first item)))) (name (key (first (val (first item)))))))
 
 (defn compile-projection
   [proj & compiled-children]
@@ -212,6 +217,8 @@
                                         \{
                                         "\n"
                                         (:compiled result)
+                                        \}
+                                        ",\n "
                                         (reduce
                                          (fn [acc [k child]]
                                            (if (= k :order-by)
@@ -220,11 +227,10 @@
                                          ""
                                          (map vector
                                               (sort-keys modifiers)
-                                              (take (count modifiers) (:remaining result))))
-                                        \})
+                                              (take (count modifiers) (:remaining result)))))
                         :remaining (drop (count modifiers) (:remaining result))})))
              {:compiled "" :remaining compiled-children}
-             proj)]
+             (sort-by proj-keyfn proj))]
     red))
 
 (defn compile-free-object
@@ -280,7 +286,7 @@
                                       (merge modifier-type-form {main-key (:vec result)}))
                      :remaining (:remaining result)})))
           {:vec [] :remaining types}
-          proj))
+          (sort-by proj-keyfn proj)))
 
 (defn build-free-object-type-form
   [proj types]
@@ -306,24 +312,26 @@
 
 (defn get-projection-children
   [proj type]
-  (reduce (fn [acc item]
-            (cond (keyword? item) acc
-                  (and (map? item) (assignment-operators (key (first item))))
-                  (conj acc (val (first (get item (key (first item))))))
-                  (map-entry? item) (get-projection-children (last item) type)
-                  :else (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %))
-                                             item)
-                              modifiers (dissoc item main-key)
-                              modifier-children (get-modifier-children
-                                                 modifiers
-                                                 (get object-registry (:type (get type main-key))))]
-                          (concat acc
-                                  modifier-children
-                                  (get-projection-children {main-key (get item main-key)}
-                                                           (get object-registry
-                                                                (:type (get type main-key))))))))
-          []
-          proj))
+  (let [children
+        (reduce
+         (fn [acc item]
+           (cond (keyword? item) acc
+                 (and (map? item) (assignment-operators (key (first item))))
+                 (concat acc [(val (first (get item (key (first item)))))])
+                 (map-entry? item) (get-projection-children (last item) type)
+                 :else (let [main-key (some #(when (not (contains? mod-keys (key %))) (key %)) item)
+                             modifiers (dissoc item main-key)
+                             modifier-children (get-modifier-children
+                                                modifiers
+                                                (get object-registry (:type (get type main-key))))]
+                         (concat acc
+                                 modifier-children
+                                 (get-projection-children {main-key (get item main-key)}
+                                                          (get object-registry
+                                                               (:type (get type main-key))))))))
+         []
+         (sort-by proj-keyfn proj))]
+    children))
 
 (defn get-free-object-children
   [obj]
@@ -344,7 +352,11 @@
     (let [resolved-type
           (if (contains? object-registry (:type t)) (get object-registry (:type t)) t)]
       (if (= (count p) 0)
-        t
+        (if (and (contains? object-registry (:type t)) (not (:computed t)))
+          (-> t
+              (assoc :updatable true)
+              (assoc :deletable true))
+          t)
         (if t
           (recur (rest p)
                  (let [type (or (get resolved-type (first p))
@@ -355,42 +367,57 @@
                                      {:error/error true})))))
           (throw (ex-info (str "Type " resolved-type " does not have field " (first path)) {})))))))
 
+(defn validate-dot-access-path
+  [kws]
+  (if-let [with-binding (or (get *clogel-with-bindings* (symbol (remove-colon-kw (first kws))))
+                            (get *clogel-param-bindings* (symbol (remove-colon-kw (first kws)))))]
+    (into
+     [(or (:object-type (:type with-binding)) (:type (:type with-binding)) (:type with-binding))]
+     (rest kws))
+    (if (not (contains? object-registry (first kws)))
+      (throw (ex-info
+              (str "Invalid dot access: " kws " does not lead with a dot or valid object type")
+              {:error/error true}))
+      kws)))
+
 (defn validate-dot-access
   [sym]
-  (if (symbol? sym)
-    (let [as-str (str/replace (str sym) #"-" "_")
-          access-path (if (= (first as-str) \.)
-                        (if *clogel-dot-access-context*
-                          (cons (or (:object-type (:type *clogel-dot-access-context*))
-                                    (or (:type (:type *clogel-dot-access-context*))
-                                        (:type *clogel-dot-access-context*)))
-                                (rest (map keyword (str/split as-str #"\."))))
-                          (throw (ex-info "Tried to use leading dot access with no object context"
-                                          {:dot-access-form sym})))
-                        (let [kws (mapv keyword (str/split as-str #"\."))]
-                          (if-let [with-binding (or (get *clogel-with-bindings*
-                                                         (symbol (remove-colon-kw (first kws))))
-                                                    (get *clogel-param-bindings*
-                                                         (symbol (remove-colon-kw (first kws)))))]
-                            (into [(or (:object-type (:type with-binding))
-                                       (:type (:type with-binding))
-                                       (:type with-binding))]
-                                  (rest kws))
-                            (if (not (contains? object-registry (first kws)))
-                              (throw (ex-info (str "Invalid symbol form: "
-                                                   sym
-                                                   " does not lead with a dot or valid object type")
-                                              {:error/error true}))
-                              kws))))]
-      (resolve-path (rest access-path)
-                    {:type (first access-path)
-                     :card (if (and *clogel-dot-access-context*
-                                    (= (first access-path) (:type *clogel-dot-access-context*)))
-                             (:card *clogel-dot-access-context*)
-                             :many)}))
-    (throw (ex-info "Not a symbol somehow" {}))))
+  (let [access-path
+        (if (symbol? sym)
+          (let [as-str (str/replace (str sym) #"-" "_")]
+            (if (= (first as-str) \.)
+              (if *clogel-dot-access-context*
+                (cons (or (:object-type (:type *clogel-dot-access-context*))
+                          (or (:type (:type *clogel-dot-access-context*))
+                              (:type *clogel-dot-access-context*)))
+                      (rest (map keyword (str/split as-str #"\."))))
+                (throw (ex-info "Tried to use leading dot access with no object context"
+                                {:dot-access-form sym})))
+              (let [kws (mapv keyword (str/split as-str #"\."))] (validate-dot-access-path kws))))
+          (if (vector? sym)
+            (validate-dot-access-path sym)
+            (throw (ex-info (str "Not a symbol somehow" sym *clogel-dot-access-context*) {}))))]
+    (resolve-path (rest access-path)
+                  {:type (first access-path)
+                   :card (if (and *clogel-dot-access-context*
+                                  (= (first access-path) (:type *clogel-dot-access-context*)))
+                           (:card *clogel-dot-access-context*)
+                           :many)})))
 
-(defn compile-dot-access [sym] (str/replace (str sym) #"-" "_"))
+(defn compile-dot-access
+  [sym]
+  (if (symbol? sym)
+    (str/replace (str sym) #"-" "_")
+    (str/replace (str/join "."
+                           (reduce (fn [acc i]
+                                     (into acc
+                                           [(-> (str i)
+                                                (str/replace #"__" "::")
+                                                (str/replace #"/" "::"))]))
+                                   []
+                                   (mapv remove-colon-kw sym)))
+                 #"-"
+                 "_")))
 
 (def dot-access
   {:dot-access (->Node :dot-access

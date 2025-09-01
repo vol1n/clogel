@@ -33,7 +33,6 @@
   [select-statement]
   (let [select (:select select-statement)
         limit (:limit select-statement)]
-    (println "SERECT" select)
     (if (not select)
       (throw (ex-info "should be unreachable" {}))
       (let [failure (validate-map select-statement
@@ -73,12 +72,12 @@
 
 (defn update-validator
   [update-statement]
-  (println "update statemnt" update-statement)
   (let [update (:update update-statement)]
     (if (not update)
       (throw (ex-info "should be unreachable" {}))
       (let [failure (validate-map update-statement
-                                  {:update {:fn #(:updatable (:type %)) :message "Not updateable"}
+                                  {:update {:fn      #(or (:updatable (:type %)) (:updatable %))
+                                            :message "Not updateable"}
                                    :filter (get modifier-validators :filter)
                                    :set    {:fn #(:settable (:type %)) :message "Not settable"}})]
         (if failure failure {:type (:type update) :card (:card update)})))))
@@ -90,7 +89,8 @@
     (if (not delete)
       (throw (ex-info "should be unreachable" {}))
       (let [failure (validate-map delete-statement
-                                  (merge {:delete {:fn      #(:deletable (:type %))
+                                  (merge {:delete {:fn      #(or (:deletable (:type %))
+                                                                 (:deletable %))
                                                    :message "Not deletable"}}
                                          modifier-validators))]
         (if failure
@@ -102,7 +102,6 @@
 
 (defn with-validator
   [with-entry]
-  (println "with entry" with-entry)
   (let [bindings (:with with-entry)
         rest (:rest with-entry)
         error (map
@@ -168,7 +167,9 @@
                   :set             5.1
                   :unless-conflict 4.5
                   :else            4.75
-                  :order-by        6}]
+                  :order-by        6
+                  :offset          6.1
+                  :limit           6.2}]
     (->> (keys m)
          (sort-by (fn [k] [(get priority k 999) ;; primary: custom priority
                            (name k)]))          ;; secondary: alphabetical
@@ -264,10 +265,8 @@
               :select
               (fn [select-statement]
                 (map (fn [k]
-                       (cond (= k :project) {}
-                             (and (= k :order-by) (vector? (get select-statement k)))
-                             (do (println "printing group-by" (get select-statement k))
-                                 (first (get select-statement k)))
+                       (cond (and (= k :order-by) (vector? (get select-statement k)))
+                             (first (get select-statement k))
                              :else (get select-statement k)))
                      (sort-keys select-statement)))
               (fn [select-statement types]
@@ -308,8 +307,9 @@
               [(->Overload delete-validator (build-top-level-compiler :delete))])
    :with     (->Node :with
                      (fn [with-statement]
-                       (into (mapv #(last %) (:with with-statement))
-                             [(dissoc with-statement :with)]))
+                       (let [with-child (into (mapv #(last %) (:with with-statement))
+                                              [(dissoc with-statement :with)])]
+                         with-child))
                      (fn [with-statement types]
                        (merge {:with (mapv vector (map first (:with with-statement)) types)
                                :rest (last types)}))
@@ -381,7 +381,12 @@
 
 (defn else ([val] (else {} val)) ([statement val] (assoc statement :else val)))
 
-(defn for ([binding union] {:for binding :union union}))
+(defn for
+  ([binding union]
+   (for {}
+        binding
+        union))
+  ([statement binding union] (merge statement {:for binding :union union})))
 
 (defn with ([bindings] (with {} bindings)) ([statement bindings] (assoc statement :with bindings)))
 

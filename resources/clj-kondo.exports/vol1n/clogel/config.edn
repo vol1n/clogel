@@ -1,0 +1,1 @@
+{:hooks {:analyze-call {vol1n.clogel.core/defquery hooks.clogel/g-defquery}}}

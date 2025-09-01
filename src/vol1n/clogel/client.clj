@@ -1,12 +1,18 @@
 (ns vol1n.clogel.client
   (:require [cheshire.core :as json]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [clojure.walk :as walk]
+            [clojure.pprint :refer [pprint]])
   (:import [com.geldata.driver GelClientPool]
-           [java.util HashMap]))
+           [java.util HashMap]
+           [java.util.function Function BiConsumer BiFunction]
+           [java.util.concurrent CompletionStage CompletableFuture TimeUnit]))
 
 (def client-pool (atom (GelClientPool.)))
 
 (defn dehyphenate-symbol [sym] (symbol (str/replace (str sym) "-" "_")))
+
+(def ^:dynamic *clogel-tx* nil)
 
 (defn java-map
   [m]
@@ -18,11 +24,38 @@
   (java-map {})
   (java-map {"key-1" "val1"}))
 
+;; (defn -query-stage
+;;   [client query-str params]
+;;   (try (println "-query-stage" client query-str (java-map params))
+;;        (-> (.queryJson client query-str (java-map params))
+;;            (.thenApply (reify
+;;                         java.util.function.Function
+;;                           (apply [_ raw-json]
+;;                             (cheshire.core/parse-string (.getValue raw-json) true)))))
+;;        (catch Exception e (println "-query-stage exception" e))))
+;;
+
+(defn -query-stage
+  [client query-str params]
+  (-> (.queryJson client query-str (java-map params))
+      (.thenApply (reify
+                   Function
+                     (apply [_ raw-json] (cheshire.core/parse-string (.getValue raw-json) true))))
+      ;; log any async failure
+  ))
+
+(defn -query
+  [client query-str params]
+  (let [raw (-> (.queryJson client query-str (java-map params))
+                (.toCompletableFuture)
+                (.get)
+                (.getValue))
+        res (json/parse-string raw true)]
+    res))
+
 (defn query
   ([query-str] (query query-str {}))
   ([query-str params]
-   (-> (.queryJson @client-pool query-str (java-map params))
-       (.toCompletableFuture)
-       (.get)
-       (.getValue)
-       (json/parse-string true))))
+   (if *clogel-tx*
+     (-query-stage *clogel-tx* query-str params)
+     (-query @client-pool query-str params))))

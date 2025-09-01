@@ -1,0 +1,11 @@
+/.cpcache
+/.nrepl-port
+/target
+/classes
+/.lein-* 
+*.org
+dev
+dbschema/migrations
+.DS_Store
+.lsp/
+.clj-kondo/

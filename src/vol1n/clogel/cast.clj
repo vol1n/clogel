@@ -9,7 +9,7 @@
 (defn build-cast-validator
   [cast]
   (fn [[_ target]]
-    (if (= (:from-type cast) (:type target))
+    (if (or (= (:from-type cast) (:type target)) (= (:card target) :empty))
       {:type (:to-type cast) :card (:card target)}
       {:error/error   true
        :error/message (str (:type target) "does not satisfy" (:from-type cast))})))

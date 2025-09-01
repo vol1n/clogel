@@ -39,7 +39,6 @@
 (defn max-card
   [cards]
   (reduce (fn [acc c]
-            (println)
             (case acc
               :singleton c
               :empty :empty

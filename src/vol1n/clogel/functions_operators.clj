@@ -188,25 +188,35 @@
   [f]
   (if (:operator_kind f)
     (case (:operator_kind f)
+      ;; always wrap in parens to guarantee operator (there is no "order of operations" in
+      ;; clojure as every function is explicitly called with parens, so this should be the case
+      ;; in the compiled operator "calls")
       "Infix" (fn [[_ & _] & compiled-children]
-                (str (first compiled-children)
-                     " " (chop-prefix (:name f) "std::")
-                     " " (last compiled-children)))
+                (str "("
+                     (first compiled-children)
+                     " "
+                     (chop-prefix (:name f) "std::")
+                     " "
+                     (last compiled-children)
+                     ")"))
       "Prefix" (fn [[_ & args] & compiled-children]
-                 (str (chop-prefix (:name f) "std::") " " (first compiled-children)))
+                 (str "(" (chop-prefix (:name f) "std::") " " (first compiled-children) ")"))
       "Ternary" (fn [[_ & args] & compiled-children]
-                  (str (first compiled-children)
-                       " if " (second compiled-children)
-                       " else " (nth compiled-children 2))))
+                  (str "("
+                       (first compiled-children)
+                       " if "
+                       (second compiled-children)
+                       " else "
+                       (nth compiled-children 2)
+                       ")")))
     (fn [[_ & args] & compiled-children]
       (str (:name f)
            "("
-           (chop-last (str/join ",\n"
-                                (map #(if (and (map? (first %)) (= (key (first (first %))) :=))
-                                        (str (key (first (val (first (first %))))) " := " (last %))
-                                        (str (last %) ",\n"))
-                                     (map vector args compiled-children)))
-                      2)
+           (str/join ",\n"
+                     (map #(if (and (map? (first %)) (= (key (first (first %))) :=))
+                             (str (key (first (val (first (first %))))) " := " (last %))
+                             (last %))
+                          (map vector args compiled-children)))
            ")"))))
 (def fn-children-generator
   (fn [[_ & args]]

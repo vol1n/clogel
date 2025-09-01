@@ -20,7 +20,6 @@
                     (g/User {:email "bob@example.com" :is_active false :name "Bob" :rating 8})))))
 
 (seed)
-(println "loading test suite")
 
 (deftest select-basic-fields
   (is (result= #{{:name "Alice"} {:name "Bob"}} (run-query (g/select {:User [:name]})))))

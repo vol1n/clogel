@@ -8,7 +8,7 @@
             [vol1n.clogel.functions-operators :refer [defgelfuncs defgeloperators gel-index]]
             [vol1n.clogel.functions-operators :as func]
             [vol1n.clogel.object-types :refer
-             [defgelobjects dot-access assignment-operators clogel-free-object]]
+             [defgelobjects dot-access assignment-operators clogel-free-object validate-dot-access]]
             [vol1n.clogel.util :refer
              [*clogel-dot-access-context* *clogel-with-bindings* *clogel-param-bindings*
               remove-colon-kw gel-type->clogel-type sanitize-kw sanitize-symbol]]
@@ -43,6 +43,7 @@
 (def cast casts/cast)
 (def tuple colls/tuple)
 (def else top/else)
+(defmacro tx "Re-exposed tx macro" [& forms] `(client/tx ~@forms))
 
 (defn match-overload
   [call overloads]
@@ -82,15 +83,25 @@
   (if (contains? (meta edn) :modifies)
     (binding [*clogel-dot-access-context* {:type (:modifies (meta edn)) :card :many}]
       (clogel->edgeql (with-meta edn (dissoc (meta edn) :modifies))))
-    (if (clojure.core/and (symbol? edn) (contains? *clogel-with-bindings* edn))
-      (assoc (get *clogel-with-bindings* edn) :value (str edn))
+    (if (clojure.core/and (symbol? edn)
+                          (clojure.core/or (contains? *clogel-with-bindings* edn)
+                                           (contains? *clogel-with-bindings*
+                                                      (dehyphenate-symbol edn))))
+      (assoc (clojure.core/or (get *clogel-with-bindings* edn)
+                              (get *clogel-with-bindings* (dehyphenate-symbol edn)))
+             :value
+             (str (dehyphenate-symbol edn)))
       (if (clojure.core/and (symbol? edn) (contains? *clogel-param-bindings* edn))
-        (assoc (clojure.core/get *clogel-param-bindings* edn)
-               :value
-               (str \<
-                    (remove-colon-kw (:type (get *clogel-param-bindings* edn)))
-                    \>
-                    (dehyphenate-symbol edn)))
+        (let [binding (get *clogel-param-bindings* edn)
+              type (remove-colon-kw (:type binding))]
+          (assoc binding
+                 :type (if (str/starts-with? type "optional")
+                         (keyword (last (str/split type #"-")))
+                         (:type binding))
+                 :value
+                 (if (str/starts-with? type "optional")
+                   (str "<optional " (last (str/split type #"-")) \> (dehyphenate-symbol edn))
+                   (str \< type \> (dehyphenate-symbol edn)))))
         (let [node-key
               (sanitize-kw
                (cond (clojure.core/and (map? edn) (:with edn)) :with
@@ -100,6 +111,11 @@
                                        (every? map? edn)
                                        (every? #(assignment-operators (key (first %))) edn))
                      :free-object
+                     (clojure.core/or (symbol? edn)
+                                      (clojure.core/and (vector? edn)
+                                                        (contains? gelobject-registry (first edn))
+                                                        (every? (complement map?) edn)))
+                     :dot-access
                      (clojure.core/and (vector? edn) (keyword? (first edn)))
                      (let [key (first edn)]
                        (if (contains? node-registry (sanitize-kw key))
@@ -109,7 +125,6 @@
                            (throw (ex-info (str "invalid keyword" key)
                                            {:valid-keys (keys node-registry) :passed key})))))
                      (keyword? edn) edn
-                     (symbol? edn) :dot-access
                      (coll? edn) :collection
                      :else :scalar))
               node (get node-registry node-key)]
@@ -120,7 +135,7 @@
                   compiled-children
                   (if (nil? children)
                     (seq [])
-                    ;; if it's an object, we need to know what object we're in for children of
+                    ;; if it's an object, we need to know what object wse're in for children of
                     ;; this node
                     (if (contains? gelobject-registry node-key)
                       (binding [*clogel-dot-access-context* {:type node-key :card :many}]
@@ -132,11 +147,13 @@
                         (cond
                           (clojure.core/= node-key :for)
                           (let [compiled-binding (clogel->edgeql (first children))]
-                            (binding [*clogel-with-bindings* (assoc *clogel-with-bindings*
-                                                                    (sanitize-symbol (first (:for
-                                                                                             edn)))
-                                                                    compiled-binding)]
-                              [compiled-binding (clogel->edgeql (last children))]))
+                            (binding [*clogel-with-bindings*
+                                      (assoc *clogel-with-bindings*
+                                             (sanitize-symbol (first (:for edn)))
+                                             (let [nb (merge compiled-binding {:card :singleton})]
+                                               nb))]
+                              [(merge compiled-binding {:card :singleton})
+                               (clogel->edgeql (last children))]))
                           (clojure.core/= node-key :group)
                           (let [compiled-group-statement (clogel->edgeql (first children))
                                 {compiled-with-children :compiled bindings :with-bindings}
@@ -158,16 +175,17 @@
                                          (clojure.core/drop (inc (count (:using edn))) children)))))
                           (clojure.core/= node-key :with)
                           (let [{compiled-with-children :compiled bindings :with-bindings}
-                                (reduce (fn [compiled [b c]]
-                                          (let [result (clogel->edgeql c)]
-                                            (binding [*clogel-with-bindings* (assoc
-                                                                              *clogel-with-bindings*
-                                                                              (sanitize-symbol b)
-                                                                              result)]
+                                (binding [*clogel-with-bindings* *clogel-with-bindings*]
+                                  (reduce (fn [compiled [b c]]
+                                            (let [result (clogel->edgeql c)]
+                                              (set! *clogel-with-bindings*
+                                                    (assoc *clogel-with-bindings*
+                                                           (sanitize-symbol b)
+                                                           result))
                                               {:compiled      (conj (:compiled compiled) result)
-                                               :with-bindings *clogel-with-bindings*})))
-                                        {:compiled [] :with-bindings *clogel-with-bindings*}
-                                        (map vector (map first (:with edn)) (butlast children)))]
+                                               :with-bindings *clogel-with-bindings*}))
+                                          {:compiled [] :with-bindings *clogel-with-bindings*}
+                                          (map vector (map first (:with edn)) (butlast children))))]
                             (binding [*clogel-with-bindings* bindings]
                               (conj compiled-with-children (clogel->edgeql (last children)))))
                           :else
@@ -193,13 +211,13 @@
 
 (defn hyphenate-keywords
   [data]
-  (postwalk (fn [x]
-              (if (keyword? x)
-                (-> x
+  (postwalk (fn [y]
+              (if (keyword? y)
+                (-> y
                     name
                     (str/replace "_" "-")
                     keyword)
-                x))
+                y))
             data))
 
 (comment
@@ -302,33 +320,81 @@
 (defn dequote [form] (if (clojure.core/and (seq? form) (= 'quote (first form))) (second form) form))
 
 (defmacro defquery
-  [& defquery-args]
-  (let [[name params query hyphenate?] defquery-args
-        params (mapv (fn [[name type]] [(dequote name) {:type type :card :singleton}]) params)
-        query (eval query)]
+  [name params & body]
+  (let [[query hyphenate?] body
+        required-params (mapv (fn [[name type]] [name {:type type :card :singleton}])
+                              ;; filter for not starting with optional
+                              (clojure.core/filter #(clojure.core/not (str/starts-with?
+                                                                       (clojure.core/name (last %))
+                                                                       "optional-"))
+                                                   params))
+        optional-params (mapv (fn [optional-param] [(first optional-param)
+                                                    {:type (last optional-param) :card :optional}])
+                              (clojure.core/filter #(str/starts-with? (clojure.core/name (last %))
+                                                                      "optional-")
+                                                   params))
+        param-symbols (into #{} (map first (clojure.core/concat required-params optional-params)))
+        hyphenate? (if (nil? hyphenate?) true hyphenate?) ;; if not passed, default to
+        ;; hyphenate. Quote parameter symbols for clogel compilation
+        quote-params
+        (fn quote-params [form]
+          (when (= (str name) "delete-instance-ids!") (println "visiting " form))
+          (let [QP (cond (clojure.core/and (symbol? form) (contains? param-symbols form))
+                         (list 'quote form)
+                         ;; Skip processing (quote ()) forms
+                         (clojure.core/and (seq? form)
+                                           (= 'quote (first form))
+                                           (seq? (second form))
+                                           (empty? (second form)))
+                         form
+                         (clojure.core/and (seq? form) (seq form)) (map quote-params form)
+                         (vector? form) (mapv quote-params form)
+                         (map? form)
+                         (into {} (map (fn [[k v]] [(quote-params k) (quote-params v)]) form))
+                         (set? form) (into #{} (map quote-params form))
+                         :else form)]
+            (when (= (str name) "delete-instance-ids!") (println "QP" QP))
+            QP))
+        quoted-query (quote-params query)
+        evaled-query (eval quoted-query)]
     (if (every? #(clojure.core/and (symbol? (first %)) (str/starts-with? (str (first %)) "$"))
-                params)
-      (if (every? #(keyword? (:type (last %))) params)
-        (try (let [args (vec (map first params))
-                   param-binding (into {} params)
-                   compiled (binding [*clogel-param-bindings* param-binding] (compile-query query))]
-               (println "compiled" compiled)
-               `(defn ~(dequote name)
-                  ~args
-                  (try (cond-> (client/query ~compiled
-                                             ~(into {}
-                                                    (map (fn [[p a]] [(str (first p)) a])
-                                                         (map vector params args))))
-                         ~hyphenate? hyphenate-keywords)
-                       (catch Throwable e#
-                         (throw (ex-info "Exception in Gel query execution: "
-                                         {:message (.getMessage e#)
-                                          :cause   (.getCause e#)
-                                          :stack   (map #(str "  at" %) (.getStackTrace e#))}))))))
-             (catch Exception e
-               (println "Error during query compilation in defquery: " (.getMessage e)
-                        "\n" (reduce #(str %1 " at " %2 "\n") (.getStackTrace e)))
-               (throw e)))
+                (clojure.core/concat required-params optional-params))
+      (if (every? #(keyword? (:type (last %)))
+                  (clojure.core/concat optional-params required-params))
+        (try
+          (let [args
+                (let [required (vec (map first required-params))]
+                  (if (seq optional-params) (into required ['& (symbol "optionals")]) required))
+                param-binding (into {} (clojure.core/concat optional-params required-params))
+                compiled (binding [*clogel-param-bindings* param-binding]
+                           (compile-query evaled-query))]
+            `(defn ~(dequote name)
+               ~args
+               (try
+                 ~(let [merged-params
+                        `(merge ~(into {}
+                                       (map (fn [[p a]] [(str (first p)) a])
+                                            (map vector required-params (butlast args))))
+                                ~(if (clojure.core/= (str (last args)) "optionals")
+                                   `(merge ~(into {}
+                                                  (mapv (fn [i] [(list 'quote
+                                                                       (clojure.core/first i)) nil])
+                                                        optional-params))
+                                           (first ~(last args)))
+                                   {(str (first (last required-params))) (last args)}))]
+                    (let [exp
+                          `(let [~'query-result (client/query ~compiled ~merged-params)]
+                             ~(if hyphenate? `(hyphenate-keywords ~'query-result) ~'query-result))]
+                      exp))
+                 (catch Throwable e#
+                   (throw (ex-info "Exception in Gel query execution: "
+                                   {:message (.getMessage e#)
+                                    :cause   (.getCause e#)
+                                    :stack   (map #(str "  at" %) (.getStackTrace e#))}))))))
+          (catch Exception e
+            (println "Error during query compilation in defquery: " (.getMessage e)
+                     "\n" (reduce #(str %1 " at " %2 "\n") (.getStackTrace e)))
+            (throw e)))
         (throw (ex-info (str
                          "Every param binding for a defquery must have the form [$symbol :type],"
                          "bindings received: "
@@ -344,6 +410,15 @@
             [['$email :str] ['$hashed-password :str]]
             (-> (top/select 42)
                 (top/filter (and (eq '$email "email") (eq '$hashed "email")))))
+  (prn (macroexpand (defquery test-optional
+                              [[$email :str] [$optional-param :optional-str]]
+                              (top/select $optional-param))))
+  ((fn []
+     (defquery test-optional
+               [[$email :str] [$optional-param :optional-str]]
+               (top/select (++ $optional-param $email)))
+     (println "res1" (test-optional "colin@example.com" {'$optional-param "yo"}))
+     (println "res2" (test-optional "bolin@example.com"))))
   (defquery 'test-query
             [['$test :int64] ['$test2 :int64]]
             (-> (top/select ['$test '$test2])))
@@ -386,3 +461,8 @@
   (query "select 42")
   (auth-user "test@example.com" "hashed-password")
   (test-query 64 32))
+
+(defn resolve-dot-access-for-object
+  [object-type dot-access-expr]
+  (binding [*clogel-dot-access-context* {:type object-type :card :many}]
+    (validate-dot-access dot-access-expr)))

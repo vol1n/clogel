@@ -18,8 +18,6 @@ select schema::Cast {
     to_type: { name },
 }"))
 
-
-
 (defonce casts (get-casts))
 
 (def parsed-casts
@@ -116,10 +114,10 @@ select schema::Cast {
 
 (defn card-gte?
   [l r]
-  (case l
-    :singleton (= r :singleton)
-    :empty (= r :empty)
-    :optional (#{:empty :singleton :optional} r)
+  (case r
+    :singleton (= l :singleton)
+    :empty (= l :empty)
+    :optional (#{:empty :singleton :optional} l)
     :many true))
 
 
@@ -155,27 +153,28 @@ Did you try and use a scalar as an object?"
                                                    (not (#{:id :__type__} k)))
                                           k))
                                       object-type)
-                fields (reduce (fn [acc [k v]]
-                                 (let [type-def (get object-type k)]
-                                   (if type-def
-                                     (if (and (implicit-castable? (:type v)
-                                                                  (:type (get cast-type k)))
-                                              (card-gte? (:card v) (:card type-def)))
-                                       (conj acc k)
-                                       (reduced {:error/error true
-                                                 :error/message
-                                                 (str "Key with cardinality "
-                                                      (:card v)
-                                                      " and type "
-                                                      (:type v)
-                                                      "does not cast onto object field with "
-                                                      "type "
-                                                      (:type type-def)
-                                                      {:card (:card type-def)
-                                                       :type (:type type-def)})}))
-                                     (conj acc k))))
-                               []
-                               cast-type)]
+                fields (reduce
+                        (fn [acc [k v]]
+                          (let [type-def (get object-type k)]
+                            (if type-def
+                              (if (and (implicit-castable? (:type v) (:type (get cast-type k)))
+                                       (card-gte? (:card v) (:card type-def)))
+                                (conj acc k)
+                                (reduced {:error/error   true
+                                          :error/message (str "Key with cardinality "
+                                                              (:card v)
+                                                              " and type "
+                                                              (:type v)
+                                                              " does not cast onto object field "
+                                                              k
+                                                              " with "
+                                                              "type "
+                                                              (:type type-def)
+                                                              {:card (:card type-def)
+                                                               :type (:type type-def)})}))
+                              (conj acc k))))
+                        []
+                        cast-type)]
             (if (:error/error fields)
               fields
               (if (not (set/superset? (set fields) (set required-fields)))

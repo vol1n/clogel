@@ -7,9 +7,7 @@
   (->Node
    :collection
    (fn [coll] (seq coll))
-   (fn [coll types]
-     (println "types" types)
-     (if (set? coll) (into '() types) (into (empty coll) types)))
+   (fn [coll types] (if (set? coll) (into '() types) (into (empty coll) types)))
    [(->Overload #(if (and (vector? %) (= :tuple (first %)))
                    {:type {:tuple (mapv {:type (:type %) :card :singleton} %)}
                     :card (if (every? (fn [item] (= (:card item) :singleton)) %) :singleton :many)}
