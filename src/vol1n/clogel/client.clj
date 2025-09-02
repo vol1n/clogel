@@ -10,26 +10,28 @@
 
 (def client-pool
   (atom
-   (if (do (println (System/getenv "GEL_INSTANCE")) (System/getenv "GEL_INSTANCE"))
+   (if (System/getenv "GEL_INSTANCE")
      ;; the Java library is not set up for production connections as
      ;; outlined in the docs. this is a workaround.
-     (let [_ (println "this")
+     (let [_ (println "getting env vars"
+                      (System/getenv "GEL_SECRET_KEY")
+                      (System/getenv "GEL_INSTANCE"))
            sk (System/getenv "GEL_SECRET_KEY")
            tmp (doto (java.io.File/createTempFile "gel-cred" ".json") (.deleteOnExit))
-           json-data {:secret_key sk}]
+           json-data {:secret_key sk}
+           ]
+       (println "tmp" (.getAbsolutePath tmp))
        ;; write JSON
        (spit tmp (json/encode json-data))
        ;; set GEL_CREDENTIALS_FILE for this JVM
        (System/setProperty "GEL_CREDENTIALS_FILE" (.getAbsolutePath tmp))
        ;; unset the others (affects only this process, not the parent shell)
        (System/clearProperty "GEL_INSTANCE")
-       ;; (System/clearProperty "GEL_SECRET_KEY")
-       (println "tmp creds" (slurp (.getAbsolutePath tmp)))
-       (println "Property now:" (System/getProperty "GEL_CREDENTIALS_FILE"))
+       (println "credentials file" (slurp (.getAbsolutePath tmp)))
        (let [pool (GelClientPool.)]
-         (println "pool")
-         (try (println "yo" (.get (.toCompletableFuture (.queryJson pool "select 42;"))))
+         (try (.get (.toCompletableFuture (.queryJson pool "select 42;")))
               (catch Exception e
+                (println "ERROR INITIALIZING GEL CLOUD CONNECTION")
                 ;; raw stack trace
                 (.printStackTrace e)
                 ;; message from the server (usually the important bit)
@@ -39,9 +41,7 @@
                 ;; optional: turn stack trace into a seq for easier reading
                 (doseq [frame (.getStackTrace e)] (println frame))))
          pool))
-     (let [pool (GelClientPool.)]
-       (println "pool")
-       pool))))
+     (do (println "GEL_INSTANCE NOT SET") (GelClientPool.)))))
 
 ;; (def client-pool (atom (GelClientPool.)))
 
