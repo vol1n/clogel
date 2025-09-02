@@ -9,7 +9,7 @@
            [java.util.function Function BiConsumer BiFunction]
            [java.util.concurrent CompletionStage CompletableFuture TimeUnit]))
 
-(defn mkdirs [p] (let [f (io/file "p")] (.mkdirs (.getParentFile f))))
+(defn mkdirs [p] (let [f (io/file p)] (.mkdirs (.getParentFile f))))
 
 (def client-pool
   (atom
