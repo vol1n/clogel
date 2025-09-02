@@ -2,11 +2,14 @@
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [clojure.walk :as walk]
-            [clojure.pprint :refer [pprint]])
+            [clojure.pprint :refer [pprint]]
+            [clojure.java.io :as io])
   (:import [com.geldata.driver GelClientPool GelConnection]
            [java.util HashMap]
            [java.util.function Function BiConsumer BiFunction]
            [java.util.concurrent CompletionStage CompletableFuture TimeUnit]))
+
+(defn mkdirs [p] (let [f (io/file "p")] (.mkdirs (.getParentFile f))))
 
 (def client-pool
   (atom
@@ -17,6 +20,7 @@
            instance_name (System/getenv "GEL_INSTANCE")
            sk (System/getenv "GEL_SECRET_KEY")
            json-data {:secret_key sk}
+           p "~/.config/edgedb/cloud-credentials/default.json"
            ;; (println "tmp" (.getAbsolutePath tmp))
            ;; write JSON
            ;; (spit tmp (json/encode json-data))
@@ -28,25 +32,27 @@
            ;; connection (-> (GelConnection/builder)
            ;;                (.withCredentials (json/encode json-data))
            ;;                (.build))
-           _ (spit "~/.config/edgedb/cloud-credentials/default.json" (json/encode json-data))
-           _ (println "~/.config/edgedb/cloud-credentials/default.json contains:"
-                      (slurp "~/.config/edgedb/cloud-credentials/default.json"))
-           connection (-> (GelConnection/builder)
-                          (.withInstance instance_name)
-                          (.build))
-           pool (GelClientPool. connection)]
-       (try (.get (.toCompletableFuture (.queryJson pool "select 42;")))
-            (catch Exception e
-              (println "ERROR INITIALIZING GEL CLOUD CONNECTION")
-              ;; raw stack trace
-              (.printStackTrace e)
-              ;; message from the server (usually the important bit)
-              (println "Message:" (.getMessage e))
-              ;; Gel-specific code, if it exposes one
-              (when-let [code (try (.getCode e) (catch Exception _ nil))] (println "Code:" code))
-              ;; optional: turn stack trace into a seq for easier reading
-              (doseq [frame (.getStackTrace e)] (println frame))))
-       pool)
+          ]
+       (mkdirs p)
+       (spit p (json/encode json-data))
+       (println "~/.config/edgedb/cloud-credentials/default.json contains:"
+                (slurp "~/.config/edgedb/cloud-credentials/default.json"))
+       (let [connection (-> (GelConnection/builder)
+                            (.withInstance instance_name)
+                            (.build))
+             pool (GelClientPool. connection)]
+         (try (.get (.toCompletableFuture (.queryJson pool "select 42;")))
+              (catch Exception e
+                (println "ERROR INITIALIZING GEL CLOUD CONNECTION")
+                ;; raw stack trace
+                (.printStackTrace e)
+                ;; message from the server (usually the important bit)
+                (println "Message:" (.getMessage e))
+                ;; Gel-specific code, if it exposes one
+                (when-let [code (try (.getCode e) (catch Exception _ nil))] (println "Code:" code))
+                ;; optional: turn stack trace into a seq for easier reading
+                (doseq [frame (.getStackTrace e)] (println frame))))
+         pool))
      (do (println "GEL_INSTANCE NOT SET") (GelClientPool.)))))
 
 ;; (def client-pool (atom (GelClientPool.)))
