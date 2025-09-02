@@ -3,44 +3,50 @@
             [clojure.string :as str]
             [clojure.walk :as walk]
             [clojure.pprint :refer [pprint]])
-  (:import [com.geldata.driver GelClientPool]
+  (:import [com.geldata.driver GelClientPool GelConnection]
            [java.util HashMap]
            [java.util.function Function BiConsumer BiFunction]
            [java.util.concurrent CompletionStage CompletableFuture TimeUnit]))
 
 (def client-pool
   (atom
-   (if (System/getenv "GEL_INSTANCE")
+   (if (System/getenv "GEL_SECRET_KEY")
      ;; the Java library is not set up for production connections as
      ;; outlined in the docs. this is a workaround.
-     (let [_ (println "getting env vars"
-                      (System/getenv "GEL_SECRET_KEY")
-                      (System/getenv "GEL_INSTANCE"))
+     (let [_ (println "getting env vars" (System/getenv "GEL_SECRET_KEY"))
+           instance_name (System/getenv "GEL_INSTANCE")
            sk (System/getenv "GEL_SECRET_KEY")
-           tmp (doto (java.io.File/createTempFile "gel-cred" ".json") (.deleteOnExit))
            json-data {:secret_key sk}
-           ]
-       (println "tmp" (.getAbsolutePath tmp))
-       ;; write JSON
-       (spit tmp (json/encode json-data))
-       ;; set GEL_CREDENTIALS_FILE for this JVM
-       (System/setProperty "GEL_CREDENTIALS_FILE" (.getAbsolutePath tmp))
-       ;; unset the others (affects only this process, not the parent shell)
-       (System/clearProperty "GEL_INSTANCE")
-       (println "credentials file" (slurp (.getAbsolutePath tmp)))
-       (let [pool (GelClientPool.)]
-         (try (.get (.toCompletableFuture (.queryJson pool "select 42;")))
-              (catch Exception e
-                (println "ERROR INITIALIZING GEL CLOUD CONNECTION")
-                ;; raw stack trace
-                (.printStackTrace e)
-                ;; message from the server (usually the important bit)
-                (println "Message:" (.getMessage e))
-                ;; Gel-specific code, if it exposes one
-                (when-let [code (try (.getCode e) (catch Exception _ nil))] (println "Code:" code))
-                ;; optional: turn stack trace into a seq for easier reading
-                (doseq [frame (.getStackTrace e)] (println frame))))
-         pool))
+           ;; (println "tmp" (.getAbsolutePath tmp))
+           ;; write JSON
+           ;; (spit tmp (json/encode json-data))
+           ;; set GEL_CREDENTIALS_FILE for this JVM
+           ;; (System/setProperty "GEL_CREDENTIALS_FILE" (.getAbsolutePath tmp))
+           ;; unset the others (affects only this process, not the parent shell)
+           ;; (System/clearProperty "GEL_INSTANCE")
+           ;; (println "credentials file" (slurp (.getAbsolutePath tmp)))
+           ;; connection (-> (GelConnection/builder)
+           ;;                (.withCredentials (json/encode json-data))
+           ;;                (.build))
+           _ (spit "~/.config/edgedb/cloud-credentials/default.json" (json/encode json-data))
+           _ (println "~/.config/edgedb/cloud-credentials/default.json contains:"
+                      (slurp "~/.config/edgedb/cloud-credentials/default.json"))
+           connection (-> (GelConnection/builder)
+                          (.withInstance instance_name)
+                          (.build))
+           pool (GelClientPool. connection)]
+       (try (.get (.toCompletableFuture (.queryJson pool "select 42;")))
+            (catch Exception e
+              (println "ERROR INITIALIZING GEL CLOUD CONNECTION")
+              ;; raw stack trace
+              (.printStackTrace e)
+              ;; message from the server (usually the important bit)
+              (println "Message:" (.getMessage e))
+              ;; Gel-specific code, if it exposes one
+              (when-let [code (try (.getCode e) (catch Exception _ nil))] (println "Code:" code))
+              ;; optional: turn stack trace into a seq for easier reading
+              (doseq [frame (.getStackTrace e)] (println frame))))
+       pool)
      (do (println "GEL_INSTANCE NOT SET") (GelClientPool.)))))
 
 ;; (def client-pool (atom (GelClientPool.)))
