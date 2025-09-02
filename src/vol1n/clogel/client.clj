@@ -8,7 +8,42 @@
            [java.util.function Function BiConsumer BiFunction]
            [java.util.concurrent CompletionStage CompletableFuture TimeUnit]))
 
-(def client-pool (atom (GelClientPool.)))
+(def client-pool
+  (atom
+   (if (do (println (System/getenv "GEL_INSTANCE")) (System/getenv "GEL_INSTANCE"))
+     ;; the Java library is not set up for production connections as
+     ;; outlined in the docs. this is a workaround.
+     (let [_ (println "this")
+           sk (System/getenv "GEL_SECRET_KEY")
+           tmp (doto (java.io.File/createTempFile "gel-cred" ".json") (.deleteOnExit))
+           json-data {:secret_key sk}]
+       ;; write JSON
+       (spit tmp (json/encode json-data))
+       ;; set GEL_CREDENTIALS_FILE for this JVM
+       (System/setProperty "GEL_CREDENTIALS_FILE" (.getAbsolutePath tmp))
+       ;; unset the others (affects only this process, not the parent shell)
+       (System/clearProperty "GEL_INSTANCE")
+       ;; (System/clearProperty "GEL_SECRET_KEY")
+       (println "tmp creds" (slurp (.getAbsolutePath tmp)))
+       (println "Property now:" (System/getProperty "GEL_CREDENTIALS_FILE"))
+       (let [pool (GelClientPool.)]
+         (println "pool")
+         (try (println "yo" (.get (.toCompletableFuture (.queryJson pool "select 42;"))))
+              (catch Exception e
+                ;; raw stack trace
+                (.printStackTrace e)
+                ;; message from the server (usually the important bit)
+                (println "Message:" (.getMessage e))
+                ;; Gel-specific code, if it exposes one
+                (when-let [code (try (.getCode e) (catch Exception _ nil))] (println "Code:" code))
+                ;; optional: turn stack trace into a seq for easier reading
+                (doseq [frame (.getStackTrace e)] (println frame))))
+         pool))
+     (let [pool (GelClientPool.)]
+       (println "pool")
+       pool))))
+
+;; (def client-pool (atom (GelClientPool.)))
 
 (defn dehyphenate-symbol [sym] (symbol (str/replace (str sym) "-" "_")))
 
