@@ -7,7 +7,35 @@
   (:import [com.geldata.driver GelClientPool GelConnection]
            [java.util HashMap]
            [java.util.function Function BiConsumer BiFunction]
-           [java.util.concurrent CompletionStage CompletableFuture TimeUnit]))
+           [java.util.concurrent CompletionStage CompletableFuture TimeUnit]
+           [java.util Locale]))
+
+(defn get-home [] (System/getProperty "user.home"))
+
+(defn os-type
+  []
+  (let [os (.. System (getProperty "os.name") (toLowerCase Locale/ROOT))]
+    (println "os" os)
+    (cond (.contains os "win") :windows
+          (.contains os "mac") :osx
+          :else :linux)))
+
+(defn get-edge-db-config-dir
+  []
+  (case (do (println (os-type)) (os-type))
+    :windows (io/file (get-home) "AppData" "Local" "EdgeDB" "config")
+    :osx (io/file (get-home) "Library" "Application Support" "edgedb")
+    :linux (let [xdg (System/getenv "XDG_CONFIG_HOME")
+                 base (cond (and xdg (.isAbsolute (io/file xdg))) (io/file xdg "edgedb")
+                            :else (io/file (get-home) ".config" "edgedb"))]
+             (if (.exists (io/file base)) base (io/file (get-home) ".edgedb")))))
+
+(defn cloud-profile-path
+  "Mimics readCloudProfile path resolution for a given profile name."
+  [profile]
+  (let [config-dir (get-edge-db-config-dir)]
+    (println "CONFIG DIR" config-dir)
+    (io/file config-dir "cloud-credentials" (str profile ".json"))))
 
 (defn mkdirs [p] (let [f (io/file p)] (.mkdirs (.getParentFile f))))
 
@@ -17,10 +45,11 @@
      ;; the Java library is not set up for production connections as
      ;; outlined in the docs. this is a workaround.
      (let [_ (println "getting env vars" (System/getenv "GEL_SECRET_KEY"))
-           instance_name (System/getenv "GEL_INSTANCE")
+           instance-name (System/getenv "GEL_INSTANCE")
            sk (System/getenv "GEL_SECRET_KEY")
            json-data {:secret_key sk}
-           p "~/.config/edgedb/cloud-credentials/default.json"
+           ;; always default
+           profile-path (cloud-profile-path "default")
            ;; (println "tmp" (.getAbsolutePath tmp))
            ;; write JSON
            ;; (spit tmp (json/encode json-data))
@@ -33,12 +62,12 @@
            ;;                (.withCredentials (json/encode json-data))
            ;;                (.build))
           ]
-       (mkdirs p)
-       (spit p (json/encode json-data))
-       (println "~/.config/edgedb/cloud-credentials/default.json contains:"
-                (slurp "~/.config/edgedb/cloud-credentials/default.json"))
+       (println "100")
+       (mkdirs profile-path)
+       (println "200")
+       (spit profile-path (json/encode json-data))
        (let [connection (-> (GelConnection/builder)
-                            (.withInstance instance_name)
+                            (.withInstance instance-name)
                             (.build))
              pool (GelClientPool. connection)]
          (try (.get (.toCompletableFuture (.queryJson pool "select 42;")))
