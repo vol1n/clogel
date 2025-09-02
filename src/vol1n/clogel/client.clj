@@ -70,7 +70,8 @@
                             (.withInstance instance-name)
                             (.build))
              pool (GelClientPool. connection)]
-         (try (.get (.toCompletableFuture (.queryJson pool "select 42;")))
+         (try (println "success"
+                       (.getValue (.get (.toCompletableFuture (.queryJson pool "select 42;")))))
               (catch Exception e
                 (println "ERROR INITIALIZING GEL CLOUD CONNECTION")
                 ;; raw stack trace
@@ -122,11 +123,14 @@
 
 (defn -query
   [client query-str params]
+  (println "querying" query-str)
   (let [raw (-> (.queryJson client query-str (java-map params))
                 (.toCompletableFuture)
                 (.get)
                 (.getValue))
+        _ (println "attempting to parse" raw)
         res (json/parse-string raw true)]
+    (println "succeeded in parsing" res)
     res))
 
 (defn query
