@@ -122,20 +122,21 @@
   ))
 
 (defn -query
-  [client query-str params]
-  (println "querying" query-str)
-  (let [raw (-> (.queryJson client query-str (java-map params))
-                (.toCompletableFuture)
-                (.get)
-                (.getValue))
-        _ (println "attempting to parse" raw)
-        res (json/parse-string raw true)]
-    (println "succeeded in parsing" res)
-    res))
+  ([client query-str params] (-query client query-str params false))
+  ([client query-str params verbose?]
+   (when verbose? (println "[CLOGEL QUERY]" query-str) (println "[CLOGEL PARAMS]" params))
+   (let [raw (-> (.queryJson client query-str (java-map params))
+                 (.toCompletableFuture)
+                 (.get)
+                 (.getValue))
+         res (json/parse-string raw true)]
+     (when verbose? (println "[CLOGEL RESPONSE]" res))
+     res)))
 
 (defn query
   ([query-str] (query query-str {}))
-  ([query-str params]
+  ([query-str params] (query query-str params (= (System/getenv "CLOGEL_VERBOSE") "true")))
+  ([query-str params verbose?]
    (if *clogel-tx*
      (-query-stage *clogel-tx* query-str params)
-     (-query @client-pool query-str params))))
+     (-query @client-pool query-str params verbose?))))
